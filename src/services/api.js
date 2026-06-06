@@ -2,6 +2,31 @@ import axios from "axios";
 
 const BASE_URL = "http://localhost:8080/api";
 
+// Add JWT token to every request
+axios.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem("token");
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error) => Promise.reject(error),
+);
+
+// Handle 401 - redirect to login
+axios.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      localStorage.removeItem("token");
+      localStorage.removeItem("user");
+      window.location.href = "/";
+    }
+    return Promise.reject(error);
+  },
+);
+
 // Leads
 export const getLeads = () => axios.get(`${BASE_URL}/leads`);
 export const getLeadById = (id) => axios.get(`${BASE_URL}/leads/${id}`);
@@ -66,6 +91,14 @@ export const getDeals = () => axios.get(`${BASE_URL}/deals`);
 export const createDeal = (d) => axios.post(`${BASE_URL}/deals`, d);
 export const updateDeal = (id, d) => axios.put(`${BASE_URL}/deals/${id}`, d);
 export const deleteDeal = (id) => axios.delete(`${BASE_URL}/deals/${id}`);
+
+// Placements
+export const getPlacements = () => axios.get(`${BASE_URL}/placements`);
+export const createPlacement = (p) => axios.post(`${BASE_URL}/placements`, p);
+export const updatePlacement = (id, p) =>
+  axios.put(`${BASE_URL}/placements/${id}`, p);
+export const deletePlacement = (id) =>
+  axios.delete(`${BASE_URL}/placements/${id}`);
 
 // Users / Login
 export const login = (credentials) =>
