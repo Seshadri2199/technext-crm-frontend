@@ -1,5 +1,24 @@
 import React, { useState, useEffect } from "react";
 import { getTasks, createTask, updateTask, deleteTask } from "../services/api";
+import * as XLSX from "xlsx";
+import { saveAs } from "file-saver";
+
+const exportToExcel = (data, filename) => {
+  if (!data || data.length === 0) {
+    alert("No data to export!");
+    return;
+  }
+  const ws = XLSX.utils.json_to_sheet(data);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, filename);
+  const buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+  saveAs(
+    new Blob([buf], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    }),
+    `${filename}_${new Date().toISOString().split("T")[0]}.xlsx`,
+  );
+};
 
 function Tasks() {
   const [tasks, setTasks] = useState([]);
@@ -90,6 +109,16 @@ function Tasks() {
       setSortDir("asc");
     }
     setShowSortMenu(false);
+  };
+
+  const handleExport = () => {
+    const data = filtered.map((t) => ({
+      Title: t.title || "",
+      "Due Date": t.dueDate || "",
+      Priority: t.priority || "",
+      Status: t.status || "",
+    }));
+    exportToExcel(data, "TechNext_Tasks");
   };
 
   const getPriorityBadge = (p) => {
@@ -185,6 +214,9 @@ function Tasks() {
             onClick={() => setViewMode("board")}
           >
             ⊞
+          </button>
+          <button style={s.exportBtn} onClick={handleExport}>
+            ⬇ Export
           </button>
           <div style={s.abDivider} />
           <button
@@ -803,6 +835,16 @@ const s = {
     background: "#eef2ff",
     borderColor: "#6366f1",
     color: "#6366f1",
+  },
+  exportBtn: {
+    background: "#f0fdf4",
+    border: "1px solid #bbf7d0",
+    borderRadius: "8px",
+    padding: "6px 12px",
+    fontSize: "12.5px",
+    color: "#10b981",
+    cursor: "pointer",
+    fontWeight: "600",
   },
   abDivider: {
     width: "1px",

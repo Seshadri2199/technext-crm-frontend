@@ -5,6 +5,25 @@ import {
   updateCandidate,
   deleteCandidate,
 } from "../services/api";
+import * as XLSX from "xlsx";
+import { saveAs } from "file-saver";
+
+const exportToExcel = (data, filename) => {
+  if (!data || data.length === 0) {
+    alert("No data to export!");
+    return;
+  }
+  const ws = XLSX.utils.json_to_sheet(data);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Candidates");
+  const buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+  saveAs(
+    new Blob([buf], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    }),
+    `${filename}_${new Date().toISOString().split("T")[0]}.xlsx`,
+  );
+};
 
 function Candidates() {
   const [candidates, setCandidates] = useState([]);
@@ -47,7 +66,6 @@ function Candidates() {
     "Offered",
     "Placed",
   ];
-
   const filtered =
     filterStage === "All"
       ? candidates
@@ -112,6 +130,20 @@ function Candidates() {
     setFilterStage(stage);
     setPage(1);
     setSelected([]);
+  };
+
+  const handleExport = () => {
+    const data = filtered.map((c) => ({
+      Name: c.name || "",
+      "Current Role": c.currentRole || "",
+      Email: c.email || "",
+      Phone: c.phone || "",
+      Skills: c.skills || "",
+      Experience: c.experience || "",
+      Location: c.location || "",
+      Stage: c.stage || "",
+    }));
+    exportToExcel(data, "TechNext_Candidates");
   };
 
   const getStageBadge = (stage) => {
@@ -232,6 +264,9 @@ function Candidates() {
             onClick={() => setViewMode("kanban")}
           >
             ⊞
+          </button>
+          <button style={s.exportBtn} onClick={handleExport}>
+            ⬇ Export
           </button>
           <div style={s.abDivider} />
           <button
@@ -763,6 +798,16 @@ const s = {
     background: "#eef2ff",
     borderColor: "#6366f1",
     color: "#6366f1",
+  },
+  exportBtn: {
+    background: "#f0fdf4",
+    border: "1px solid #bbf7d0",
+    borderRadius: "8px",
+    padding: "6px 12px",
+    fontSize: "12.5px",
+    color: "#10b981",
+    cursor: "pointer",
+    fontWeight: "600",
   },
   abDivider: {
     width: "1px",

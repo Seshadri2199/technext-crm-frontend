@@ -1,5 +1,24 @@
 import React, { useState, useEffect } from "react";
 import { getLeads, createLead, updateLead, deleteLead } from "../services/api";
+import * as XLSX from "xlsx";
+import { saveAs } from "file-saver";
+
+const exportToExcel = (data, filename) => {
+  if (!data || data.length === 0) {
+    alert("No data to export!");
+    return;
+  }
+  const ws = XLSX.utils.json_to_sheet(data);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Leads");
+  const buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+  saveAs(
+    new Blob([buf], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    }),
+    `${filename}_${new Date().toISOString().split("T")[0]}.xlsx`,
+  );
+};
 
 function Leads() {
   const [leads, setLeads] = useState([]);
@@ -97,6 +116,19 @@ function Leads() {
     setSelected([]);
   };
 
+  const handleExport = () => {
+    const data = filtered.map((l) => ({
+      Name: l.name || "",
+      Company: l.company || "",
+      Email: l.email || "",
+      Phone: l.phone || "",
+      Source: l.source || "",
+      Status: l.status || "",
+      Notes: l.notes || "",
+    }));
+    exportToExcel(data, "TechNext_Leads");
+  };
+
   const getBadge = (status) => {
     switch (status) {
       case "Hot":
@@ -128,7 +160,6 @@ function Leads() {
 
   return (
     <div style={s.page}>
-      {/* Action Bar */}
       <div style={s.actionBar}>
         <div style={s.abLeft}>
           <span style={s.abTitle}>All Leads</span>
@@ -185,6 +216,9 @@ function Leads() {
           >
             ⊞
           </button>
+          <button style={s.exportBtn} onClick={handleExport}>
+            ⬇ Export
+          </button>
           <div style={s.abDivider} />
           <button
             style={s.createBtn}
@@ -208,7 +242,6 @@ function Leads() {
       </div>
 
       <div style={s.body}>
-        {/* Filter Panel */}
         {filterOpen && (
           <div style={s.filterPanel}>
             <div style={s.fpHeader}>Filter by</div>
@@ -286,16 +319,12 @@ function Leads() {
         )}
 
         <div style={s.mainContent}>
-          {/* Pagination Bar */}
           <div style={s.paginationBar}>
             {selected.length > 0 ? (
               <div style={s.bulkActions}>
                 <span style={s.bulkCount}>{selected.length} selected</span>
                 <button style={s.bulkBtn} onClick={() => setSelected([])}>
                   Clear
-                </button>
-                <button style={{ ...s.bulkBtn, color: "#ef4444" }}>
-                  Delete Selected
                 </button>
               </div>
             ) : (
@@ -330,7 +359,6 @@ function Leads() {
             </div>
           </div>
 
-          {/* List View */}
           {viewMode === "list" && (
             <table style={s.table}>
               <thead>
@@ -380,7 +408,7 @@ function Leads() {
                   <tr>
                     <td colSpan={8} style={s.emptyCell}>
                       <div style={s.emptyWrap}>
-                        <div style={s.emptyEmoji}>👤</div>
+                        <div style={{ fontSize: "40px" }}>👤</div>
                         <div style={s.emptyTitle}>No leads found</div>
                         <div style={s.emptySub}>
                           Click "Create Lead" to add your first lead
@@ -466,7 +494,6 @@ function Leads() {
             </table>
           )}
 
-          {/* Kanban View */}
           {viewMode === "kanban" && (
             <div style={s.kanban}>
               {["New", "Hot", "Warm", "Cold"].map((status) => {
@@ -533,7 +560,6 @@ function Leads() {
         </div>
       </div>
 
-      {/* Modal */}
       {showModal && (
         <div style={s.overlay}>
           <div style={s.modal}>
@@ -701,7 +727,6 @@ const s = {
     color: "#6b7280",
     cursor: "pointer",
     fontWeight: "500",
-    transition: "all 0.15s",
   },
   abBtnActive: {
     background: "#eef2ff",
@@ -716,12 +741,21 @@ const s = {
     fontSize: "14px",
     color: "#6b7280",
     cursor: "pointer",
-    transition: "all 0.15s",
   },
   abViewActive: {
     background: "#eef2ff",
     borderColor: "#6366f1",
     color: "#6366f1",
+  },
+  exportBtn: {
+    background: "#f0fdf4",
+    border: "1px solid #bbf7d0",
+    borderRadius: "8px",
+    padding: "6px 12px",
+    fontSize: "12.5px",
+    color: "#10b981",
+    cursor: "pointer",
+    fontWeight: "600",
   },
   abDivider: {
     width: "1px",
@@ -739,7 +773,6 @@ const s = {
     fontWeight: "700",
     cursor: "pointer",
     boxShadow: "0 2px 8px rgba(99,102,241,0.3)",
-    transition: "all 0.15s",
   },
   body: { display: "flex", flex: 1, overflow: "hidden" },
   filterPanel: {
@@ -786,7 +819,6 @@ const s = {
     borderRadius: "8px",
     userSelect: "none",
     gap: "6px",
-    transition: "all 0.1s",
   },
   fpItemActive: { background: "#eef2ff" },
   fpDot: { width: "8px", height: "8px", borderRadius: "50%", flexShrink: 0 },
@@ -842,7 +874,6 @@ const s = {
     fontSize: "11px",
     cursor: "pointer",
     color: "#6b7280",
-    transition: "all 0.1s",
   },
   pgBtnDisabled: { opacity: 0.4, cursor: "not-allowed" },
   pgInfo: { fontSize: "12px", color: "#6b7280" },
@@ -869,7 +900,6 @@ const s = {
     color: "#9ca3af",
     fontWeight: "700",
     borderBottom: "1px solid #e5e7f0",
-    whiteSpace: "nowrap",
   },
   trow: { borderBottom: "1px solid #f1f3f9", transition: "background 0.1s" },
   trowSelected: { background: "#fafbff" },
@@ -941,7 +971,6 @@ const s = {
     alignItems: "center",
     gap: "8px",
   },
-  emptyEmoji: { fontSize: "40px" },
   emptyTitle: { fontSize: "15px", fontWeight: "700", color: "#0f1117" },
   emptySub: { fontSize: "13px", color: "#9ca3af" },
   kanban: {
@@ -1022,7 +1051,25 @@ const s = {
     margin: "0 8px 8px",
     borderRadius: "8px",
     border: "1.5px dashed #e5e7f0",
-    transition: "all 0.15s",
+  },
+  sortMenu: {
+    position: "absolute",
+    top: "36px",
+    left: 0,
+    background: "#fff",
+    border: "1px solid #e5e7f0",
+    borderRadius: "10px",
+    boxShadow: "0 4px 16px rgba(0,0,0,0.1)",
+    zIndex: 100,
+    minWidth: "160px",
+  },
+  sortMenuItem: {
+    padding: "9px 14px",
+    fontSize: "12.5px",
+    color: "#374151",
+    cursor: "pointer",
+    display: "flex",
+    alignItems: "center",
   },
   overlay: {
     position: "fixed",
@@ -1097,7 +1144,6 @@ const s = {
     boxSizing: "border-box",
     fontFamily: "inherit",
     color: "#0f1117",
-    transition: "border-color 0.15s",
   },
   modalFoot: {
     display: "flex",

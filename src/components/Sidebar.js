@@ -4,6 +4,8 @@ import logo from "../logo.jpg";
 function Sidebar({ user, activePage, onNavigate, onLogout }) {
   const [salesOpen, setSalesOpen] = useState(true);
   const [activitiesOpen, setActivitiesOpen] = useState(true);
+  const [toolsOpen, setToolsOpen] = useState(true);
+  const [insightsOpen, setInsightsOpen] = useState(true);
   const [searchVal, setSearchVal] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
 
@@ -18,10 +20,16 @@ function Sidebar({ user, activePage, onNavigate, onLogout }) {
           "home",
           "candidates",
           "jobs",
+          "placements",
           "tasks",
           "meetings",
           "calls",
           "reports",
+          "calendar",
+          "invoice",
+          "goals",
+          "notes",
+          "analytics",
         ].includes(module);
       case "Sales":
         return [
@@ -34,41 +42,56 @@ function Sidebar({ user, activePage, onNavigate, onLogout }) {
           "meetings",
           "calls",
           "reports",
+          "calendar",
+          "goals",
+          "notes",
         ].includes(module);
       case "HR Manager":
         return [
           "home",
           "candidates",
           "jobs",
+          "placements",
           "meetings",
           "tasks",
           "reports",
           "analytics",
+          "calendar",
+          "invoice",
+          "goals",
+          "notes",
         ].includes(module);
       case "Staff":
-        return ["home", "tasks", "meetings"].includes(module);
+        return ["home", "tasks", "meetings", "calendar", "notes"].includes(
+          module,
+        );
       default:
         return false;
     }
   };
 
   const allModules = [
-    { id: "home", label: "Home", icon: "home" },
-    { id: "leads", label: "Leads", icon: "leads" },
-    { id: "contacts", label: "Contacts", icon: "contacts" },
-    { id: "accounts", label: "Accounts", icon: "accounts" },
-    { id: "deals", label: "Deals", icon: "deals" },
-    { id: "forecasts", label: "Forecasts", icon: "forecasts" },
-    { id: "documents", label: "Documents", icon: "docs" },
-    { id: "campaigns", label: "Campaigns", icon: "campaigns" },
-    { id: "jobs", label: "Job Orders", icon: "jobs" },
-    { id: "candidates", label: "Candidates", icon: "candidates" },
-    { id: "tasks", label: "Tasks", icon: "tasks" },
-    { id: "meetings", label: "Meetings", icon: "meetings" },
-    { id: "calls", label: "Calls", icon: "calls" },
-    { id: "reports", label: "Reports", icon: "reports" },
-    { id: "analytics", label: "Analytics", icon: "analytics" },
-    { id: "workqueue", label: "Workqueue", icon: "workqueue" },
+    { id: "home", label: "Home", icon: "🏠" },
+    { id: "leads", label: "Leads", icon: "👤" },
+    { id: "contacts", label: "Contacts", icon: "📇" },
+    { id: "accounts", label: "Accounts", icon: "🏢" },
+    { id: "deals", label: "Deals", icon: "🤝" },
+    { id: "forecasts", label: "Forecasts", icon: "🎯" },
+    { id: "documents", label: "Documents", icon: "📄" },
+    { id: "campaigns", label: "Campaigns", icon: "📢" },
+    { id: "jobs", label: "Job Orders", icon: "📋" },
+    { id: "candidates", label: "Candidates", icon: "🪪" },
+    { id: "placements", label: "Placements", icon: "🏆" },
+    { id: "tasks", label: "Tasks", icon: "✅" },
+    { id: "meetings", label: "Meetings", icon: "📅" },
+    { id: "calls", label: "Calls", icon: "📞" },
+    { id: "reports", label: "Reports", icon: "📊" },
+    { id: "analytics", label: "Analytics", icon: "📈" },
+    { id: "workqueue", label: "Workqueue", icon: "⚡" },
+    { id: "calendar", label: "Calendar", icon: "🗓️" },
+    { id: "invoice", label: "Invoice", icon: "🧾" },
+    { id: "goals", label: "Goals", icon: "🎯" },
+    { id: "notes", label: "Notes", icon: "📝" },
   ].filter((m) => canAccess(m.id));
 
   const suggestions = searchVal.trim()
@@ -76,8 +99,6 @@ function Sidebar({ user, activePage, onNavigate, onLogout }) {
         m.label.toLowerCase().includes(searchVal.toLowerCase()),
       )
     : [];
-
-  const isActive = (id) => activePage === id;
 
   const getIcon = (id) => {
     const icons = {
@@ -91,6 +112,7 @@ function Sidebar({ user, activePage, onNavigate, onLogout }) {
       campaigns: "📢",
       jobs: "📋",
       candidates: "🪪",
+      placements: "🏆",
       tasks: "✅",
       meetings: "📅",
       calls: "📞",
@@ -98,6 +120,10 @@ function Sidebar({ user, activePage, onNavigate, onLogout }) {
       analytics: "📈",
       workqueue: "⚡",
       settings: "⚙️",
+      calendar: "🗓️",
+      invoice: "🧾",
+      goals: "🎯",
+      notes: "📝",
     };
     return icons[id] || "📌";
   };
@@ -124,12 +150,6 @@ function Sidebar({ user, activePage, onNavigate, onLogout }) {
           color: "#c4b5fd",
           dot: "#8b5cf6",
         };
-      case "Staff":
-        return {
-          bg: "rgba(107,114,128,0.15)",
-          color: "#d1d5db",
-          dot: "#6b7280",
-        };
       default:
         return {
           bg: "rgba(107,114,128,0.15)",
@@ -143,7 +163,7 @@ function Sidebar({ user, activePage, onNavigate, onLogout }) {
 
   const MenuItem = ({ id, label }) => {
     if (!canAccess(id)) return null;
-    const active = isActive(id);
+    const active = activePage === id;
     return (
       <div
         onClick={() => onNavigate(id)}
@@ -179,7 +199,6 @@ function Sidebar({ user, activePage, onNavigate, onLogout }) {
 
   return (
     <div style={s.sidebar}>
-      {/* Logo */}
       <div style={s.top}>
         <div style={s.logoWrap}>
           <div style={s.logoImgWrap}>
@@ -192,7 +211,6 @@ function Sidebar({ user, activePage, onNavigate, onLogout }) {
         </div>
       </div>
 
-      {/* Search */}
       <div style={s.searchContainer}>
         <div style={{ position: "relative", margin: "0 12px" }}>
           <div style={s.searchWrap}>
@@ -262,21 +280,11 @@ function Sidebar({ user, activePage, onNavigate, onLogout }) {
         </div>
       </div>
 
-      {/* Navigation */}
       <div style={s.scroll}>
-        {/* Top Nav */}
         <div style={s.navSection}>
           <MenuItem id="home" label="Home" />
-          {canAccess("reports") && <MenuItem id="reports" label="Reports" />}
-          {canAccess("analytics") && (
-            <MenuItem id="analytics" label="Analytics" />
-          )}
-          {canAccess("workqueue") && (
-            <MenuItem id="workqueue" label="Workqueue" />
-          )}
         </div>
 
-        {/* Sales */}
         {[
           "leads",
           "contacts",
@@ -312,10 +320,14 @@ function Sidebar({ user, activePage, onNavigate, onLogout }) {
           </div>
         )}
 
-        {/* Activities */}
-        {["jobs", "candidates", "tasks", "meetings", "calls"].some((m) =>
-          canAccess(m),
-        ) && (
+        {[
+          "jobs",
+          "candidates",
+          "placements",
+          "tasks",
+          "meetings",
+          "calls",
+        ].some((m) => canAccess(m)) && (
           <div style={s.navSection}>
             <SectionHeader
               label="ACTIVITIES"
@@ -328,6 +340,9 @@ function Sidebar({ user, activePage, onNavigate, onLogout }) {
                 {canAccess("candidates") && (
                   <MenuItem id="candidates" label="Candidates" />
                 )}
+                {canAccess("placements") && (
+                  <MenuItem id="placements" label="Placements" />
+                )}
                 <MenuItem id="tasks" label="Tasks" />
                 <MenuItem id="meetings" label="Meetings" />
                 {canAccess("calls") && <MenuItem id="calls" label="Calls" />}
@@ -336,13 +351,62 @@ function Sidebar({ user, activePage, onNavigate, onLogout }) {
           </div>
         )}
 
-        {/* Settings */}
+        {["reports", "analytics", "workqueue"].some((m) => canAccess(m)) && (
+          <div style={s.navSection}>
+            <SectionHeader
+              label="INSIGHTS"
+              isOpen={insightsOpen}
+              onToggle={() => setInsightsOpen(!insightsOpen)}
+            />
+            {insightsOpen && (
+              <div style={s.sectionItems}>
+                {canAccess("reports") && (
+                  <MenuItem id="reports" label="Reports" />
+                )}
+                {canAccess("analytics") && (
+                  <MenuItem id="analytics" label="Analytics" />
+                )}
+                {canAccess("workqueue") && (
+                  <MenuItem id="workqueue" label="Workqueue" />
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {["calendar", "invoice", "goals", "notes"].some((m) =>
+          canAccess(m),
+        ) && (
+          <div style={s.navSection}>
+            <SectionHeader
+              label="TOOLS"
+              isOpen={toolsOpen}
+              onToggle={() => setToolsOpen(!toolsOpen)}
+            />
+            {toolsOpen && (
+              <div style={s.sectionItems}>
+                {canAccess("calendar") && (
+                  <MenuItem id="calendar" label="Calendar" />
+                )}
+                {canAccess("invoice") && (
+                  <MenuItem id="invoice" label="Invoice Generator" />
+                )}
+                {canAccess("goals") && (
+                  <MenuItem id="goals" label="Targets & Goals" />
+                )}
+                {canAccess("notes") && (
+                  <MenuItem id="notes" label="Internal Notes" />
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
         <div style={s.navSection}>
           <MenuItem id="settings" label="Settings" />
         </div>
       </div>
 
-      {/* User Profile */}
       <div style={s.bottom}>
         <div style={s.userCard}>
           <div style={s.userAvatarWrap}>
@@ -375,7 +439,6 @@ const s = {
     flexDirection: "column",
     height: "100vh",
     fontFamily: "'Plus Jakarta Sans',sans-serif",
-    borderRight: "1px solid rgba(255,255,255,0.05)",
   },
   top: {
     padding: "18px 16px 14px",
@@ -414,7 +477,6 @@ const s = {
     borderRadius: "9px",
     padding: "8px 11px",
     border: "1px solid rgba(255,255,255,0.07)",
-    transition: "all 0.15s",
   },
   searchIcon: { fontSize: "12px", opacity: 0.5, flexShrink: 0 },
   searchInput: {
@@ -448,7 +510,6 @@ const s = {
     cursor: "pointer",
     display: "flex",
     alignItems: "center",
-    transition: "background 0.1s",
   },
   scroll: { flex: 1, overflowY: "auto", padding: "4px 0" },
   navSection: { padding: "4px 8px", marginBottom: "2px" },
@@ -483,7 +544,7 @@ const s = {
     position: "relative",
     marginBottom: "1px",
   },
-  menuItemActive: { background: "rgba(99,102,241,0.15)", borderLeft: "none" },
+  menuItemActive: { background: "rgba(99,102,241,0.15)" },
   activeIndicator: {
     position: "absolute",
     left: 0,
@@ -505,7 +566,6 @@ const s = {
     color: "rgba(255,255,255,0.55)",
     fontWeight: "500",
     flex: 1,
-    transition: "color 0.15s",
   },
   bottom: { padding: "12px", borderTop: "1px solid rgba(255,255,255,0.06)" },
   userCard: {
@@ -567,7 +627,6 @@ const s = {
     alignItems: "center",
     justifyContent: "center",
     color: "rgba(255,255,255,0.4)",
-    transition: "all 0.15s",
     flexShrink: 0,
   },
 };

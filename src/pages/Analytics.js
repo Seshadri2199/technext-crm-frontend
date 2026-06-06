@@ -1,412 +1,767 @@
 import React, { useState, useEffect } from "react";
-import {
-  getLeads,
-  getCandidates,
-  getJobOrders,
-  getTasks,
-} from "../services/api";
 import axios from "axios";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  PieChart,
+  Pie,
+  Cell,
+  AreaChart,
+  Area,
+  FunnelChart,
+  Funnel,
+  LabelList,
+  Legend,
+} from "recharts";
 
 const BASE_URL = "http://localhost:8080/api";
+const COLORS = [
+  "#6366f1",
+  "#10b981",
+  "#f59e0b",
+  "#ef4444",
+  "#8b5cf6",
+  "#0ea5e9",
+  "#ec4899",
+];
 
-function Analytics() {
+export default function Analytics() {
   const [leads, setLeads] = useState([]);
   const [candidates, setCandidates] = useState([]);
-  const [jobs, setJobs] = useState([]);
-  const [tasks, setTasks] = useState([]);
+  const [placements, setPlacements] = useState([]);
   const [deals, setDeals] = useState([]);
+  const [tasks, setTasks] = useState([]);
+  const [meetings, setMeetings] = useState([]);
+  const [jobs, setJobs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [period, setPeriod] = useState("monthly");
 
   useEffect(() => {
-    getLeads()
-      .then((r) => setLeads(r.data))
-      .catch(() => {});
-    getCandidates()
-      .then((r) => setCandidates(r.data))
-      .catch(() => {});
-    getJobOrders()
-      .then((r) => setJobs(r.data))
-      .catch(() => {});
-    getTasks()
-      .then((r) => setTasks(r.data))
-      .catch(() => {});
-    axios
-      .get(`${BASE_URL}/deals`)
-      .then((r) => setDeals(r.data))
-      .catch(() => {});
+    Promise.all([
+      axios.get(`${BASE_URL}/leads`).catch(() => ({ data: [] })),
+      axios.get(`${BASE_URL}/candidates`).catch(() => ({ data: [] })),
+      axios.get(`${BASE_URL}/placements`).catch(() => ({ data: [] })),
+      axios.get(`${BASE_URL}/deals`).catch(() => ({ data: [] })),
+      axios.get(`${BASE_URL}/tasks`).catch(() => ({ data: [] })),
+      axios.get(`${BASE_URL}/meetings`).catch(() => ({ data: [] })),
+      axios.get(`${BASE_URL}/jobs`).catch(() => ({ data: [] })),
+    ]).then(([l, c, p, d, t, m, j]) => {
+      setLeads(l.data);
+      setCandidates(c.data);
+      setPlacements(p.data);
+      setDeals(d.data);
+      setTasks(t.data);
+      setMeetings(m.data);
+      setJobs(j.data);
+      setLoading(false);
+    });
   }, []);
 
-  const totalDealValue = deals.reduce(
-    (sum, d) => sum + (parseFloat(d.amount) || 0),
-    0,
-  );
-  const wonDeals = deals.filter((d) => d.stage === "Closed Won");
-  const wonValue = wonDeals.reduce(
-    (sum, d) => sum + (parseFloat(d.amount) || 0),
-    0,
-  );
-  const winRate =
-    deals.length > 0 ? Math.round((wonDeals.length / deals.length) * 100) : 0;
-  const placedCandidates = candidates.filter(
-    (c) => c.stage === "Placed",
-  ).length;
-  const openJobs = jobs.filter((j) => j.status === "Open").length;
-  const hotLeads = leads.filter((l) => l.status === "Hot").length;
-
-  const Donut = ({ value, max, color, label, sub }) => {
-    const pct = max > 0 ? (value / max) * 100 : 0;
-    const r = 40;
-    const circ = 2 * Math.PI * r;
-    const dash = (pct / 100) * circ;
-    return (
-      <div style={s.donutWrap}>
-        <svg width="100" height="100" viewBox="0 0 100 100">
-          <circle
-            cx="50"
-            cy="50"
-            r={r}
-            fill="none"
-            stroke="#f1f5f9"
-            strokeWidth="10"
-          />
-          <circle
-            cx="50"
-            cy="50"
-            r={r}
-            fill="none"
-            stroke={color}
-            strokeWidth="10"
-            strokeDasharray={`${dash} ${circ}`}
-            strokeLinecap="round"
-            transform="rotate(-90 50 50)"
-          />
-          <text
-            x="50"
-            y="46"
-            textAnchor="middle"
-            fontSize="14"
-            fontWeight="800"
-            fill="#1a1f3a"
-          >
-            {value}
-          </text>
-          <text x="50" y="60" textAnchor="middle" fontSize="9" fill="#94a3b8">
-            of {max}
-          </text>
-        </svg>
-        <div style={s.donutLabel}>{label}</div>
-        <div style={s.donutSub}>{sub}</div>
-      </div>
-    );
-  };
-
-  const HBar = ({ label, value, max, color }) => (
-    <div style={s.hbarRow}>
-      <div style={s.hbarLabel}>{label}</div>
-      <div style={s.hbarTrack}>
+  const CustomTooltip = ({ active, payload, label }) => {
+    if (active && payload && payload.length) {
+      return (
         <div
           style={{
-            ...s.hbarFill,
-            width: `${max > 0 ? (value / max) * 100 : 0}%`,
-            background: color,
+            background: "#fff",
+            border: "1px solid #e5e7f0",
+            borderRadius: "10px",
+            padding: "10px 14px",
+            boxShadow: "0 4px 16px rgba(0,0,0,0.1)",
           }}
-        />
+        >
+          <p
+            style={{
+              fontSize: "12px",
+              fontWeight: "700",
+              color: "#0f1117",
+              marginBottom: "4px",
+            }}
+          >
+            {label}
+          </p>
+          {payload.map((p, i) => (
+            <p
+              key={i}
+              style={{ fontSize: "12px", color: p.color, margin: "2px 0" }}
+            >
+              {p.name}: <strong>{p.value}</strong>
+            </p>
+          ))}
+        </div>
+      );
+    }
+    return null;
+  };
+
+  // Recruitment Funnel
+  const funnelData = [
+    { name: "Total Leads", value: leads.length, fill: "#6366f1" },
+    {
+      name: "Hot Leads",
+      value: leads.filter((l) => l.status === "Hot").length,
+      fill: "#8b5cf6",
+    },
+    { name: "Candidates", value: candidates.length, fill: "#3b82f6" },
+    {
+      name: "Interviews",
+      value: candidates.filter((c) => c.stage === "Interview").length,
+      fill: "#10b981",
+    },
+    {
+      name: "Offered",
+      value: candidates.filter((c) => c.stage === "Offered").length,
+      fill: "#f59e0b",
+    },
+    { name: "Placed", value: placements.length, fill: "#ef4444" },
+  ];
+
+  // Lead Source distribution
+  const leadSources = [
+    "LinkedIn",
+    "Referral",
+    "Website",
+    "Cold Call",
+    "Event",
+    "Other",
+  ]
+    .map((src) => ({
+      name: src,
+      value: leads.filter((l) => l.source === src).length,
+    }))
+    .filter((d) => d.value > 0);
+
+  // Candidate skill distribution
+  const skillMap = {};
+  candidates.forEach((c) => {
+    if (c.skills)
+      c.skills.split(",").forEach((sk) => {
+        const s = sk.trim();
+        if (s) skillMap[s] = (skillMap[s] || 0) + 1;
+      });
+  });
+  const topSkills = Object.entries(skillMap)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 8)
+    .map(([name, value]) => ({ name, value }));
+
+  // Deal stage analysis
+  const dealStages = [
+    "Prospecting",
+    "Qualified",
+    "Proposal",
+    "Negotiation",
+    "Closed Won",
+    "Closed Lost",
+  ].map((stage) => ({
+    stage,
+    count: deals.filter((d) => d.stage === stage).length,
+    value: deals
+      .filter((d) => d.stage === stage)
+      .reduce((sum, d) => sum + (parseFloat(d.amount) || 0), 0),
+  }));
+
+  // Monthly trend (simulated)
+  const monthlyTrend = [
+    { month: "Jan", leads: 8, candidates: 5, placements: 2, revenue: 180000 },
+    { month: "Feb", leads: 12, candidates: 8, placements: 3, revenue: 270000 },
+    { month: "Mar", leads: 15, candidates: 10, placements: 4, revenue: 380000 },
+    { month: "Apr", leads: 10, candidates: 7, placements: 3, revenue: 290000 },
+    { month: "May", leads: 18, candidates: 12, placements: 5, revenue: 470000 },
+    {
+      month: "Jun",
+      leads: leads.length,
+      candidates: candidates.length,
+      placements: placements.length,
+      revenue: placements.reduce(
+        (sum, p) => sum + (parseFloat(p.commission) || 0),
+        0,
+      ),
+    },
+  ];
+
+  // Task completion
+  const taskCompletion = [
+    {
+      name: "Done",
+      value: tasks.filter((t) => t.status === "Done").length,
+      fill: "#10b981",
+    },
+    {
+      name: "Pending",
+      value: tasks.filter((t) => t.status === "Pending").length,
+      fill: "#f59e0b",
+    },
+  ];
+
+  // Placement by company
+  const companyMap = {};
+  placements.forEach((p) => {
+    if (p.clientCompany)
+      companyMap[p.clientCompany] = (companyMap[p.clientCompany] || 0) + 1;
+  });
+  const placementsByCompany = Object.entries(companyMap)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 6)
+    .map(([name, value]) => ({ name, value }));
+
+  const KPICard = ({ icon, label, value, change, color }) => (
+    <div style={s.kpiCard}>
+      <div style={s.kpiTop}>
+        <div style={{ ...s.kpiIcon, background: color + "20" }}>
+          <span style={{ fontSize: "18px" }}>{icon}</span>
+        </div>
+        {change && (
+          <span
+            style={{
+              ...s.kpiChange,
+              color: parseFloat(change) >= 0 ? "#10b981" : "#ef4444",
+            }}
+          >
+            {parseFloat(change) >= 0 ? "↑" : "↓"} {Math.abs(change)}%
+          </span>
+        )}
       </div>
-      <div style={s.hbarVal}>{value}</div>
+      <div style={s.kpiVal}>{value}</div>
+      <div style={s.kpiLabel}>{label}</div>
     </div>
   );
 
-  const Gauge = ({ value, max, color, label }) => {
-    const pct = max > 0 ? Math.min((value / max) * 100, 100) : 0;
+  const totalCommission = placements.reduce(
+    (sum, p) => sum + (parseFloat(p.commission) || 0),
+    0,
+  );
+  const conversionRate =
+    leads.length > 0 ? Math.round((placements.length / leads.length) * 100) : 0;
+  const avgSalary =
+    placements.length > 0
+      ? Math.round(
+          placements.reduce((sum, p) => sum + (parseFloat(p.salary) || 0), 0) /
+            placements.length,
+        )
+      : 0;
+
+  if (loading)
     return (
-      <div style={s.gaugeWrap}>
-        <div style={s.gaugeLabel}>{label}</div>
-        <div style={s.gaugeTrack}>
-          <div
-            style={{ ...s.gaugeFill, width: `${pct}%`, background: color }}
-          />
-          <div style={s.gaugeThumb(pct)} />
-        </div>
-        <div style={s.gaugeVals}>
-          <span>0</span>
-          <span style={{ fontWeight: 700, color }}>{value}</span>
-          <span>{max}</span>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          height: "60vh",
+          flexDirection: "column",
+          gap: "12px",
+        }}
+      >
+        <div
+          style={{
+            width: "36px",
+            height: "36px",
+            borderRadius: "50%",
+            border: "4px solid #eef2ff",
+            borderTop: "4px solid #6366f1",
+          }}
+        />
+        <div style={{ fontSize: "13px", color: "#9ca3af" }}>
+          Loading analytics...
         </div>
       </div>
     );
-  };
 
   return (
     <div style={s.page}>
+      {/* Header */}
       <div style={s.header}>
-        <div style={s.headerLeft}>
-          <span style={s.title}>Analytics</span>
-          <select style={s.select}>
-            <option>Org Overview</option>
-            <option>My Overview</option>
-          </select>
+        <div>
+          <div style={s.title}>Advanced Analytics</div>
+          <div style={s.sub}>Deep insights into your staffing operations</div>
         </div>
-        <div style={s.headerRight}>
-          <button style={s.outlineBtn}>Add Component</button>
-          <button style={s.createBtn}>Create Dashboard</button>
+        <div style={s.periodToggle}>
+          {["weekly", "monthly", "yearly"].map((p) => (
+            <button
+              key={p}
+              style={{
+                ...s.periodBtn,
+                ...(period === p ? s.periodBtnActive : {}),
+              }}
+              onClick={() => setPeriod(p)}
+            >
+              {p.charAt(0).toUpperCase() + p.slice(1)}
+            </button>
+          ))}
         </div>
       </div>
 
       <div style={s.content}>
-        {/* Top KPI Cards — like Zoho Analytics */}
-        <div style={s.kpiRow}>
-          <div style={s.kpiCard}>
-            <div style={s.kpiTop}>
-              <span style={s.kpiCardLabel}>LEADS THIS MONTH</span>
-              <span style={s.kpiRefresh}>↻</span>
+        {/* KPI Row */}
+        <div style={s.kpiGrid}>
+          <KPICard
+            icon="🏆"
+            label="Total Placements"
+            value={placements.length}
+            change="12"
+            color="#8b5cf6"
+          />
+          <KPICard
+            icon="💰"
+            label="Total Commission"
+            value={`₹${(totalCommission / 100000).toFixed(1)}L`}
+            change="8"
+            color="#f59e0b"
+          />
+          <KPICard
+            icon="📊"
+            label="Conversion Rate"
+            value={`${conversionRate}%`}
+            change="5"
+            color="#6366f1"
+          />
+          <KPICard
+            icon="💼"
+            label="Avg Salary"
+            value={`₹${(avgSalary / 100000).toFixed(1)}L`}
+            change="3"
+            color="#10b981"
+          />
+          <KPICard
+            icon="👤"
+            label="Total Leads"
+            value={leads.length}
+            change="15"
+            color="#3b82f6"
+          />
+          <KPICard
+            icon="🪪"
+            label="Candidates"
+            value={candidates.length}
+            change="10"
+            color="#0ea5e9"
+          />
+        </div>
+
+        {/* Row 1: Trend + Funnel */}
+        <div style={s.chartRow}>
+          <div style={{ ...s.chartCard, flex: 2 }}>
+            <div style={s.chartTitle}>📈 Monthly Performance Trend</div>
+            <div style={s.chartSub}>
+              Leads, Candidates & Placements over 6 months
             </div>
-            <div style={s.kpiCardVal}>{leads.length}</div>
-            <div style={{ ...s.kpiCardChange, color: "#10b981" }}>
-              ↑ {hotLeads} Hot leads
+            <ResponsiveContainer width="100%" height={220}>
+              <AreaChart data={monthlyTrend}>
+                <defs>
+                  <linearGradient id="g1" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
+                  </linearGradient>
+                  <linearGradient id="g2" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+                  </linearGradient>
+                  <linearGradient id="g3" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f3f9" />
+                <XAxis
+                  dataKey="month"
+                  tick={{ fontSize: 11, fill: "#9ca3af" }}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <YAxis
+                  tick={{ fontSize: 11, fill: "#9ca3af" }}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <Tooltip content={<CustomTooltip />} />
+                <Legend />
+                <Area
+                  type="monotone"
+                  dataKey="leads"
+                  stroke="#6366f1"
+                  strokeWidth={2}
+                  fill="url(#g1)"
+                  name="Leads"
+                />
+                <Area
+                  type="monotone"
+                  dataKey="candidates"
+                  stroke="#10b981"
+                  strokeWidth={2}
+                  fill="url(#g2)"
+                  name="Candidates"
+                />
+                <Area
+                  type="monotone"
+                  dataKey="placements"
+                  stroke="#8b5cf6"
+                  strokeWidth={2}
+                  fill="url(#g3)"
+                  name="Placements"
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+
+          <div style={{ ...s.chartCard, flex: 1 }}>
+            <div style={s.chartTitle}>🎯 Recruitment Funnel</div>
+            <div style={s.chartSub}>Lead to placement conversion</div>
+            <div style={{ padding: "10px 0" }}>
+              {funnelData.map((item, i) => {
+                const maxVal = funnelData[0].value || 1;
+                const pct = Math.round((item.value / maxVal) * 100);
+                return (
+                  <div key={i} style={{ marginBottom: "8px" }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        fontSize: "11px",
+                        color: "#6b7280",
+                        marginBottom: "3px",
+                      }}
+                    >
+                      <span style={{ fontWeight: "600" }}>{item.name}</span>
+                      <span style={{ fontWeight: "700", color: item.fill }}>
+                        {item.value}
+                      </span>
+                    </div>
+                    <div
+                      style={{
+                        height: "8px",
+                        background: "#f1f3f9",
+                        borderRadius: "4px",
+                        overflow: "hidden",
+                      }}
+                    >
+                      <div
+                        style={{
+                          height: "100%",
+                          width: `${pct}%`,
+                          background: item.fill,
+                          borderRadius: "4px",
+                          transition: "width 0.5s",
+                        }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
-          <div style={s.kpiCard}>
-            <div style={s.kpiTop}>
-              <span style={s.kpiCardLabel}>REVENUE THIS MONTH</span>
-              <span style={s.kpiRefresh}>↻</span>
-            </div>
-            <div style={s.kpiCardVal}>₹{(wonValue / 100000).toFixed(1)}L</div>
+        </div>
+
+        {/* Row 2: Sources + Skills + Task */}
+        <div style={s.chartRow}>
+          <div style={{ ...s.chartCard, flex: 1 }}>
+            <div style={s.chartTitle}>📡 Lead Sources</div>
+            <div style={s.chartSub}>Where leads come from</div>
+            {leadSources.length > 0 ? (
+              <>
+                <ResponsiveContainer width="100%" height={160}>
+                  <PieChart>
+                    <Pie
+                      data={leadSources}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={40}
+                      outerRadius={65}
+                      paddingAngle={3}
+                      dataKey="value"
+                    >
+                      {leadSources.map((_, i) => (
+                        <Cell key={i} fill={COLORS[i % COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip content={<CustomTooltip />} />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div style={s.legend}>
+                  {leadSources.map((item, i) => (
+                    <div key={i} style={s.legendItem}>
+                      <div
+                        style={{
+                          ...s.legendDot,
+                          background: COLORS[i % COLORS.length],
+                        }}
+                      />
+                      <span style={s.legendLabel}>{item.name}</span>
+                      <span style={s.legendVal}>{item.value}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <div style={s.noData}>No lead data</div>
+            )}
+          </div>
+
+          <div style={{ ...s.chartCard, flex: 1.5 }}>
+            <div style={s.chartTitle}>💻 Top Skills in Demand</div>
+            <div style={s.chartSub}>Most common candidate skills</div>
+            {topSkills.length > 0 ? (
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart data={topSkills} layout="vertical" barSize={16}>
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    stroke="#f1f3f9"
+                    horizontal={false}
+                  />
+                  <XAxis
+                    type="number"
+                    tick={{ fontSize: 11, fill: "#9ca3af" }}
+                    axisLine={false}
+                    tickLine={false}
+                  />
+                  <YAxis
+                    type="category"
+                    dataKey="name"
+                    tick={{ fontSize: 11, fill: "#374151" }}
+                    axisLine={false}
+                    tickLine={false}
+                    width={80}
+                  />
+                  <Tooltip content={<CustomTooltip />} />
+                  <Bar dataKey="value" name="Candidates" radius={[0, 4, 4, 0]}>
+                    {topSkills.map((_, i) => (
+                      <Cell key={i} fill={COLORS[i % COLORS.length]} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div style={s.noData}>Add candidate skills to see data</div>
+            )}
+          </div>
+
+          <div style={{ ...s.chartCard, flex: 1 }}>
+            <div style={s.chartTitle}>✅ Task Completion</div>
+            <div style={s.chartSub}>{tasks.length} total tasks</div>
+            {tasks.length > 0 ? (
+              <>
+                <ResponsiveContainer width="100%" height={160}>
+                  <PieChart>
+                    <Pie
+                      data={taskCompletion}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={40}
+                      outerRadius={65}
+                      paddingAngle={3}
+                      dataKey="value"
+                    >
+                      {taskCompletion.map((entry, i) => (
+                        <Cell key={i} fill={entry.fill} />
+                      ))}
+                    </Pie>
+                    <Tooltip content={<CustomTooltip />} />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div style={s.legend}>
+                  {taskCompletion.map((item, i) => (
+                    <div key={i} style={s.legendItem}>
+                      <div style={{ ...s.legendDot, background: item.fill }} />
+                      <span style={s.legendLabel}>{item.name}</span>
+                      <span style={s.legendVal}>{item.value}</span>
+                    </div>
+                  ))}
+                </div>
+                <div
+                  style={{
+                    textAlign: "center",
+                    marginTop: "8px",
+                    fontSize: "13px",
+                    fontWeight: "700",
+                    color: "#10b981",
+                  }}
+                >
+                  {tasks.length > 0
+                    ? Math.round(
+                        (tasks.filter((t) => t.status === "Done").length /
+                          tasks.length) *
+                          100,
+                      )
+                    : 0}
+                  % Complete
+                </div>
+              </>
+            ) : (
+              <div style={s.noData}>No task data</div>
+            )}
+          </div>
+        </div>
+
+        {/* Row 3: Deal stages + Placements by company */}
+        <div style={s.chartRow}>
+          <div style={{ ...s.chartCard, flex: 1.5 }}>
+            <div style={s.chartTitle}>🤝 Deal Pipeline by Stage</div>
+            <div style={s.chartSub}>Count and value per stage</div>
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={dealStages} barSize={28}>
+                <CartesianGrid
+                  strokeDasharray="3 3"
+                  stroke="#f1f3f9"
+                  vertical={false}
+                />
+                <XAxis
+                  dataKey="stage"
+                  tick={{ fontSize: 10, fill: "#9ca3af" }}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <YAxis
+                  tick={{ fontSize: 11, fill: "#9ca3af" }}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <Tooltip content={<CustomTooltip />} />
+                <Bar dataKey="count" name="Deals" radius={[6, 6, 0, 0]}>
+                  {dealStages.map((_, i) => (
+                    <Cell key={i} fill={COLORS[i % COLORS.length]} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+          <div style={{ ...s.chartCard, flex: 1 }}>
+            <div style={s.chartTitle}>🏢 Placements by Client</div>
+            <div style={s.chartSub}>Top hiring companies</div>
+            {placementsByCompany.length > 0 ? (
+              <div style={{ padding: "8px 0" }}>
+                {placementsByCompany.map((item, i) => (
+                  <div key={i} style={{ marginBottom: "10px" }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        fontSize: "12px",
+                        marginBottom: "4px",
+                      }}
+                    >
+                      <span style={{ color: "#374151", fontWeight: "600" }}>
+                        {item.name}
+                      </span>
+                      <span
+                        style={{
+                          color: COLORS[i % COLORS.length],
+                          fontWeight: "700",
+                        }}
+                      >
+                        {item.value}
+                      </span>
+                    </div>
+                    <div
+                      style={{
+                        height: "6px",
+                        background: "#f1f3f9",
+                        borderRadius: "3px",
+                        overflow: "hidden",
+                      }}
+                    >
+                      <div
+                        style={{
+                          height: "100%",
+                          width: `${(item.value / placementsByCompany[0].value) * 100}%`,
+                          background: COLORS[i % COLORS.length],
+                          borderRadius: "3px",
+                        }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={s.noData}>No placement data</div>
+            )}
+          </div>
+
+          <div style={{ ...s.chartCard, flex: 1 }}>
+            <div style={s.chartTitle}>📊 Quick Insights</div>
+            <div style={s.chartSub}>Key performance metrics</div>
             <div
               style={{
-                ...s.kpiCardChange,
-                color: wonValue > 0 ? "#10b981" : "#ef4444",
+                display: "flex",
+                flexDirection: "column",
+                gap: "10px",
+                paddingTop: "8px",
               }}
             >
-              {wonValue > 0 ? `↑ ${winRate}% win rate` : "No closed deals yet"}
-            </div>
-          </div>
-          <div style={s.kpiCard}>
-            <div style={s.kpiTop}>
-              <span style={s.kpiCardLabel}>DEALS IN PIPELINE</span>
-              <span style={s.kpiRefresh}>↻</span>
-            </div>
-            <div style={s.kpiCardVal}>{deals.length}</div>
-            <div style={{ ...s.kpiCardChange, color: "#f59e0b" }}>
-              ₹{(totalDealValue / 100000).toFixed(1)}L total value
-            </div>
-          </div>
-          <div style={s.kpiCard}>
-            <div style={s.kpiTop}>
-              <span style={s.kpiCardLabel}>PLACEMENTS THIS MONTH</span>
-              <span style={s.kpiRefresh}>↻</span>
-            </div>
-            <div style={s.kpiCardVal}>{placedCandidates}</div>
-            <div style={{ ...s.kpiCardChange, color: "#10b981" }}>
-              ↑ {openJobs} open positions
-            </div>
-          </div>
-        </div>
-
-        {/* Row 2 — Donut Charts */}
-        <div style={s.grid2}>
-          <div style={s.card}>
-            <div style={s.cardTitle}>Candidate Pipeline Overview</div>
-            <div style={s.donutRow}>
-              <Donut
-                value={candidates.filter((c) => c.stage === "Interview").length}
-                max={candidates.length}
-                color="#6366f1"
-                label="Interview"
-                sub="stage"
-              />
-              <Donut
-                value={
-                  candidates.filter((c) => c.stage === "Shortlisted").length
-                }
-                max={candidates.length}
-                color="#0ea5e9"
-                label="Shortlisted"
-                sub="stage"
-              />
-              <Donut
-                value={candidates.filter((c) => c.stage === "Offered").length}
-                max={candidates.length}
-                color="#f59e0b"
-                label="Offered"
-                sub="stage"
-              />
-              <Donut
-                value={placedCandidates}
-                max={candidates.length}
-                color="#10b981"
-                label="Placed"
-                sub="stage"
-              />
-            </div>
-          </div>
-
-          <div style={s.card}>
-            <div style={s.cardTitle}>Deal Stage Distribution</div>
-            <div style={s.donutRow}>
-              {["Prospecting", "Qualified", "Proposal", "Negotiation"].map(
-                (stage, i) => (
-                  <Donut
-                    key={stage}
-                    value={deals.filter((d) => d.stage === stage).length}
-                    max={deals.length || 1}
-                    color={["#94a3b8", "#3b82f6", "#8b5cf6", "#f59e0b"][i]}
-                    label={stage.split(" ")[0]}
-                    sub="deals"
-                  />
-                ),
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Row 3 — Bar Charts */}
-        <div style={s.grid2}>
-          <div style={s.card}>
-            <div style={s.cardTitle}>Lead Generation Target — This Year</div>
-            <div style={{ padding: "8px 0" }}>
-              <Gauge
-                value={leads.length}
-                max={100}
-                color="#e8505b"
-                label="Lead Generation"
-              />
-              <div style={{ marginTop: 16 }}>
-                <HBar
-                  label="Hot"
-                  value={hotLeads}
-                  max={leads.length || 1}
-                  color="#ef4444"
-                />
-                <HBar
-                  label="Warm"
-                  value={leads.filter((l) => l.status === "Warm").length}
-                  max={leads.length || 1}
-                  color="#f59e0b"
-                />
-                <HBar
-                  label="New"
-                  value={leads.filter((l) => l.status === "New").length}
-                  max={leads.length || 1}
-                  color="#3b82f6"
-                />
-                <HBar
-                  label="Cold"
-                  value={leads.filter((l) => l.status === "Cold").length}
-                  max={leads.length || 1}
-                  color="#94a3b8"
-                />
-              </div>
-            </div>
-          </div>
-
-          <div style={s.card}>
-            <div style={s.cardTitle}>Revenue Target — This Year</div>
-            <div style={{ padding: "8px 0" }}>
-              <Gauge
-                value={wonValue}
-                max={1000000}
-                color="#10b981"
-                label="Revenue (₹)"
-              />
-              <div style={{ marginTop: 16 }}>
-                {[
-                  "Prospecting",
-                  "Qualified",
-                  "Proposal",
-                  "Negotiation",
-                  "Closed Won",
-                ].map((stage) => {
-                  const val = deals
-                    .filter((d) => d.stage === stage)
-                    .reduce((sum, d) => sum + (parseFloat(d.amount) || 0), 0);
-                  return (
-                    <HBar
-                      key={stage}
-                      label={stage.split(" ")[0]}
-                      value={Math.round(val / 1000)}
-                      max={Math.round(totalDealValue / 1000) || 1}
-                      color={stage === "Closed Won" ? "#10b981" : "#6366f1"}
-                    />
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Row 4 — Activity Summary */}
-        <div style={s.card}>
-          <div style={s.cardTitle}>Activity Summary</div>
-          <div style={s.activityGrid}>
-            {[
-              {
-                label: "Total Leads",
-                val: leads.length,
-                color: "#3b82f6",
-                icon: "👤",
-              },
-              {
-                label: "Hot Leads",
-                val: hotLeads,
-                color: "#ef4444",
-                icon: "🔥",
-              },
-              {
-                label: "Open Jobs",
-                val: openJobs,
-                color: "#10b981",
-                icon: "💼",
-              },
-              {
-                label: "Total Candidates",
-                val: candidates.length,
-                color: "#6366f1",
-                icon: "🪪",
-              },
-              {
-                label: "Placed",
-                val: placedCandidates,
-                color: "#10b981",
-                icon: "✅",
-              },
-              {
-                label: "Pending Tasks",
-                val: tasks.filter((t) => t.status === "Pending").length,
-                color: "#f59e0b",
-                icon: "⏳",
-              },
-              {
-                label: "Done Tasks",
-                val: tasks.filter((t) => t.status === "Done").length,
-                color: "#10b981",
-                icon: "✔️",
-              },
-              {
-                label: "Total Deals",
-                val: deals.length,
-                color: "#8b5cf6",
-                icon: "🤝",
-              },
-              {
-                label: "Won Deals",
-                val: wonDeals.length,
-                color: "#10b981",
-                icon: "🏆",
-              },
-              {
-                label: "Pipeline Value",
-                val: `₹${(totalDealValue / 100000).toFixed(1)}L`,
-                color: "#1a1f3a",
-                icon: "💰",
-              },
-            ].map((item) => (
-              <div key={item.label} style={s.activityItem}>
-                <div style={s.activityIcon}>{item.icon}</div>
-                <div style={{ ...s.activityVal, color: item.color }}>
-                  {item.val}
+              {[
+                {
+                  label: "Lead → Placement Rate",
+                  value: `${conversionRate}%`,
+                  color: "#6366f1",
+                },
+                {
+                  label: "Open Job Orders",
+                  value: jobs.filter((j) => j.status === "Open").length,
+                  color: "#10b981",
+                },
+                {
+                  label: "Won Deals",
+                  value: deals.filter((d) => d.stage === "Closed Won").length,
+                  color: "#f59e0b",
+                },
+                {
+                  label: "Avg Commission",
+                  value:
+                    placements.length > 0
+                      ? `₹${Math.round(totalCommission / placements.length).toLocaleString("en-IN")}`
+                      : "—",
+                  color: "#8b5cf6",
+                },
+                {
+                  label: "Interviews Scheduled",
+                  value: candidates.filter((c) => c.stage === "Interview")
+                    .length,
+                  color: "#3b82f6",
+                },
+                {
+                  label: "Upcoming Meetings",
+                  value: meetings.filter((m) => m.status === "Upcoming").length,
+                  color: "#0ea5e9",
+                },
+              ].map((item, i) => (
+                <div
+                  key={i}
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    padding: "8px 10px",
+                    background: "#f8f9fc",
+                    borderRadius: "8px",
+                  }}
+                >
+                  <span
+                    style={{
+                      fontSize: "12px",
+                      color: "#6b7280",
+                      fontWeight: "500",
+                    }}
+                  >
+                    {item.label}
+                  </span>
+                  <span
+                    style={{
+                      fontSize: "14px",
+                      fontWeight: "800",
+                      color: item.color,
+                    }}
+                  >
+                    {item.value}
+                  </span>
                 </div>
-                <div style={s.activityLabel}>{item.label}</div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         </div>
       </div>
@@ -419,207 +774,117 @@ const s = {
     display: "flex",
     flexDirection: "column",
     height: "100%",
-    background: "#f4f5f7",
+    background: "#f8f9fc",
+    fontFamily: "'Plus Jakarta Sans',sans-serif",
   },
   header: {
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
-    padding: "14px 20px",
+    padding: "18px 24px",
     background: "#fff",
-    borderBottom: "1px solid #e2e8f0",
+    borderBottom: "1px solid #e5e7f0",
     flexWrap: "wrap",
-    gap: "8px",
+    gap: "12px",
   },
-  headerLeft: { display: "flex", alignItems: "center", gap: "12px" },
-  title: { fontSize: "15px", fontWeight: "700", color: "#1a1f3a" },
-  select: {
-    padding: "5px 10px",
-    borderRadius: "6px",
-    border: "1px solid #e2e8f0",
-    fontSize: "12px",
-    color: "#475569",
-    outline: "none",
-    cursor: "pointer",
+  title: { fontSize: "18px", fontWeight: "800", color: "#0f1117" },
+  sub: { fontSize: "13px", color: "#9ca3af", marginTop: "3px" },
+  periodToggle: {
+    display: "flex",
+    background: "#f8f9fc",
+    border: "1px solid #e5e7f0",
+    borderRadius: "8px",
+    overflow: "hidden",
   },
-  headerRight: { display: "flex", gap: "8px" },
-  outlineBtn: {
-    background: "#fff",
-    color: "#1a1f3a",
-    border: "1px solid #e2e8f0",
-    borderRadius: "6px",
+  periodBtn: {
+    background: "none",
+    border: "none",
     padding: "7px 14px",
     fontSize: "12.5px",
-    fontWeight: "600",
+    color: "#6b7280",
     cursor: "pointer",
+    fontWeight: "500",
+    fontFamily: "inherit",
   },
-  createBtn: {
-    background: "#1a1f3a",
-    color: "#fff",
-    border: "none",
-    borderRadius: "6px",
-    padding: "7px 16px",
-    fontSize: "12.5px",
-    fontWeight: "600",
-    cursor: "pointer",
+  periodBtnActive: { background: "#6366f1", color: "#fff", fontWeight: "700" },
+  content: {
+    flex: 1,
+    overflowY: "auto",
+    padding: "20px",
+    display: "flex",
+    flexDirection: "column",
+    gap: "16px",
   },
-  content: { flex: 1, overflowY: "auto", padding: "20px" },
-  kpiRow: {
+  kpiGrid: {
     display: "grid",
-    gridTemplateColumns: "repeat(4,1fr)",
-    gap: "14px",
-    marginBottom: "20px",
+    gridTemplateColumns: "repeat(6,1fr)",
+    gap: "12px",
   },
   kpiCard: {
     background: "#fff",
-    borderRadius: "10px",
-    border: "1px solid #e2e8f0",
-    padding: "18px",
+    borderRadius: "12px",
+    border: "1px solid #e5e7f0",
+    padding: "14px",
+    boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
   },
   kpiTop: {
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: "12px",
+    marginBottom: "10px",
   },
-  kpiCardLabel: {
-    fontSize: "10px",
-    fontWeight: "700",
-    color: "#64748b",
-    textTransform: "uppercase",
-    letterSpacing: "0.8px",
-  },
-  kpiRefresh: { color: "#94a3b8", cursor: "pointer", fontSize: "14px" },
-  kpiCardVal: {
-    fontSize: "32px",
-    fontWeight: "800",
-    color: "#1a1f3a",
-    letterSpacing: "-1px",
-    marginBottom: "6px",
-  },
-  kpiCardChange: { fontSize: "12px", fontWeight: "600" },
-  grid2: {
-    display: "grid",
-    gridTemplateColumns: "1fr 1fr",
-    gap: "16px",
-    marginBottom: "16px",
-  },
-  card: {
-    background: "#fff",
-    borderRadius: "10px",
-    border: "1px solid #e2e8f0",
-    padding: "18px",
-    marginBottom: "16px",
-  },
-  cardTitle: {
-    fontSize: "13px",
-    fontWeight: "700",
-    color: "#1a1f3a",
-    marginBottom: "16px",
-    textTransform: "uppercase",
-    letterSpacing: "0.3px",
-  },
-  donutRow: {
-    display: "flex",
-    justifyContent: "space-around",
-    flexWrap: "wrap",
-    gap: "8px",
-  },
-  donutWrap: {
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    gap: "4px",
-  },
-  donutLabel: { fontSize: "11px", fontWeight: "600", color: "#475569" },
-  donutSub: { fontSize: "10px", color: "#94a3b8" },
-  hbarRow: {
+  kpiIcon: {
+    width: "34px",
+    height: "34px",
+    borderRadius: "9px",
     display: "flex",
     alignItems: "center",
-    gap: "10px",
-    marginBottom: "8px",
+    justifyContent: "center",
   },
-  hbarLabel: {
-    fontSize: "11.5px",
-    color: "#475569",
-    width: "80px",
-    flexShrink: 0,
-  },
-  hbarTrack: {
-    flex: 1,
-    height: "8px",
-    background: "#f1f5f9",
-    borderRadius: "4px",
-    overflow: "hidden",
-  },
-  hbarFill: { height: "100%", borderRadius: "4px", transition: "width 0.3s" },
-  hbarVal: {
-    fontSize: "11.5px",
-    fontWeight: "600",
-    color: "#1a1f3a",
-    width: "30px",
-    textAlign: "right",
-  },
-  gaugeWrap: { marginBottom: "8px" },
-  gaugeLabel: {
-    fontSize: "11px",
-    color: "#64748b",
-    fontWeight: "600",
-    marginBottom: "6px",
-  },
-  gaugeTrack: {
-    height: "10px",
-    background: "#f1f5f9",
-    borderRadius: "5px",
-    position: "relative",
-    overflow: "visible",
-  },
-  gaugeFill: { height: "100%", borderRadius: "5px", transition: "width 0.3s" },
-  gaugeThumb: (pct) => ({
-    position: "absolute",
-    top: "-4px",
-    left: `${pct}%`,
-    width: "18px",
-    height: "18px",
-    background: "#fff",
-    border: "2px solid #1a1f3a",
-    borderRadius: "50%",
-    transform: "translateX(-50%)",
-    boxShadow: "0 2px 4px rgba(0,0,0,0.15)",
-  }),
-  gaugeVals: {
-    display: "flex",
-    justifyContent: "space-between",
-    fontSize: "10px",
-    color: "#94a3b8",
-    marginTop: "4px",
-  },
-  activityGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(5,1fr)",
-    gap: "14px",
-  },
-  activityItem: {
-    background: "#f8fafc",
-    borderRadius: "10px",
-    padding: "14px",
-    textAlign: "center",
-    border: "1px solid #e2e8f0",
-  },
-  activityIcon: { fontSize: "22px", marginBottom: "8px" },
-  activityVal: {
+  kpiChange: { fontSize: "11px", fontWeight: "700" },
+  kpiVal: {
     fontSize: "22px",
     fontWeight: "800",
-    letterSpacing: "-0.5px",
-    marginBottom: "4px",
+    color: "#0f1117",
+    letterSpacing: "-1px",
   },
-  activityLabel: {
-    fontSize: "11px",
-    color: "#64748b",
-    fontWeight: "600",
-    textTransform: "uppercase",
-    letterSpacing: "0.3px",
+  kpiLabel: {
+    fontSize: "11.5px",
+    color: "#6b7280",
+    fontWeight: "500",
+    marginTop: "3px",
+  },
+  chartRow: { display: "flex", gap: "14px" },
+  chartCard: {
+    background: "#fff",
+    borderRadius: "12px",
+    border: "1px solid #e5e7f0",
+    padding: "18px",
+    boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
+  },
+  chartTitle: {
+    fontSize: "14px",
+    fontWeight: "700",
+    color: "#0f1117",
+    marginBottom: "3px",
+  },
+  chartSub: { fontSize: "11.5px", color: "#9ca3af", marginBottom: "14px" },
+  legend: { display: "flex", flexWrap: "wrap", gap: "8px", marginTop: "10px" },
+  legendItem: { display: "flex", alignItems: "center", gap: "5px" },
+  legendDot: {
+    width: "8px",
+    height: "8px",
+    borderRadius: "50%",
+    flexShrink: 0,
+  },
+  legendLabel: { fontSize: "11px", color: "#6b7280" },
+  legendVal: { fontSize: "11px", fontWeight: "700", color: "#0f1117" },
+  noData: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    height: "100px",
+    color: "#9ca3af",
+    fontSize: "13px",
   },
 };
-
-export default Analytics;
