@@ -30,6 +30,9 @@ function Sidebar({ user, activePage, onNavigate, onLogout }) {
           "goals",
           "notes",
           "analytics",
+          "payslips",
+          "interviews",
+          "chat",
         ].includes(module);
       case "Sales":
         return [
@@ -45,6 +48,8 @@ function Sidebar({ user, activePage, onNavigate, onLogout }) {
           "calendar",
           "goals",
           "notes",
+          "payslips",
+          "chat",
         ].includes(module);
       case "HR Manager":
         return [
@@ -60,11 +65,20 @@ function Sidebar({ user, activePage, onNavigate, onLogout }) {
           "invoice",
           "goals",
           "notes",
+          "payslips",
+          "interviews",
+          "chat",
         ].includes(module);
       case "Staff":
-        return ["home", "tasks", "meetings", "calendar", "notes"].includes(
-          module,
-        );
+        return [
+          "home",
+          "tasks",
+          "meetings",
+          "calendar",
+          "notes",
+          "payslips",
+          "chat",
+        ].includes(module);
       default:
         return false;
     }
@@ -92,6 +106,9 @@ function Sidebar({ user, activePage, onNavigate, onLogout }) {
     { id: "invoice", label: "Invoice", icon: "🧾" },
     { id: "goals", label: "Goals", icon: "🎯" },
     { id: "notes", label: "Notes", icon: "📝" },
+    { id: "payslips", label: "Payslips", icon: "💵" },
+    { id: "interviews", label: "Interviews", icon: "🎤" },
+    { id: "chat", label: "Chat", icon: "💬" },
   ].filter((m) => canAccess(m.id));
 
   const suggestions = searchVal.trim()
@@ -124,6 +141,9 @@ function Sidebar({ user, activePage, onNavigate, onLogout }) {
       invoice: "🧾",
       goals: "🎯",
       notes: "📝",
+      payslips: "💵",
+      interviews: "🎤",
+      chat: "💬",
     };
     return icons[id] || "📌";
   };
@@ -283,6 +303,7 @@ function Sidebar({ user, activePage, onNavigate, onLogout }) {
       <div style={s.scroll}>
         <div style={s.navSection}>
           <MenuItem id="home" label="Home" />
+          {canAccess("chat") && <MenuItem id="chat" label="Team Chat" />}
         </div>
 
         {[
@@ -324,13 +345,14 @@ function Sidebar({ user, activePage, onNavigate, onLogout }) {
           "jobs",
           "candidates",
           "placements",
+          "interviews",
           "tasks",
           "meetings",
           "calls",
         ].some((m) => canAccess(m)) && (
           <div style={s.navSection}>
             <SectionHeader
-              label="ACTIVITIES"
+              label="RECRUITMENT"
               isOpen={activitiesOpen}
               onToggle={() => setActivitiesOpen(!activitiesOpen)}
             />
@@ -342,6 +364,9 @@ function Sidebar({ user, activePage, onNavigate, onLogout }) {
                 )}
                 {canAccess("placements") && (
                   <MenuItem id="placements" label="Placements" />
+                )}
+                {canAccess("interviews") && (
+                  <MenuItem id="interviews" label="Interviews" />
                 )}
                 <MenuItem id="tasks" label="Tasks" />
                 <MenuItem id="meetings" label="Meetings" />
@@ -374,7 +399,7 @@ function Sidebar({ user, activePage, onNavigate, onLogout }) {
           </div>
         )}
 
-        {["calendar", "invoice", "goals", "notes"].some((m) =>
+        {["calendar", "invoice", "goals", "notes", "payslips"].some((m) =>
           canAccess(m),
         ) && (
           <div style={s.navSection}>
@@ -396,6 +421,9 @@ function Sidebar({ user, activePage, onNavigate, onLogout }) {
                 )}
                 {canAccess("notes") && (
                   <MenuItem id="notes" label="Internal Notes" />
+                )}
+                {canAccess("payslips") && (
+                  <MenuItem id="payslips" label="Payslips" />
                 )}
               </div>
             )}

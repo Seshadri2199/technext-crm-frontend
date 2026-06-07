@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect } from "react";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import Leads from "./pages/Leads";
@@ -22,6 +22,9 @@ import CalendarView from "./pages/CalendarView";
 import InvoiceGenerator from "./pages/InvoiceGenerator";
 import Goals from "./pages/Goals";
 import Notes from "./pages/Notes";
+import Payslips from "./pages/Payslips";
+import InterviewScheduler from "./pages/InterviewScheduler";
+import InternalChat from "./pages/InternalChat";
 import Sidebar from "./components/Sidebar";
 import useNotifications from "./hooks/Notifications";
 import useRecentlyViewed from "./hooks/useRecentlyViewed";
@@ -50,6 +53,9 @@ const PAGE_TITLES = {
   invoice: "Invoice Generator",
   goals: "Targets & Goals",
   notes: "Internal Notes",
+  payslips: "Payslips",
+  interviews: "Interview Scheduler",
+  chat: "Internal Chat",
 };
 
 const PAGE_ICONS = {
@@ -75,6 +81,9 @@ const PAGE_ICONS = {
   invoice: "🧾",
   goals: "🎯",
   notes: "📝",
+  payslips: "💵",
+  interviews: "🎤",
+  chat: "💬",
 };
 
 function App() {
@@ -88,7 +97,6 @@ function App() {
   const [activePage, setActivePage] = useState("home");
   const [searchVal, setSearchVal] = useState("");
   const [showNotif, setShowNotif] = useState(false);
-  const [showApps, setShowApps] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [showQuickAdd, setShowQuickAdd] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
@@ -112,7 +120,6 @@ function App() {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  // Keyboard Shortcuts
   useEffect(() => {
     const handleKey = (e) => {
       if (
@@ -122,7 +129,6 @@ function App() {
       )
         return;
       if (e.ctrlKey || e.metaKey) return;
-
       switch (e.key) {
         case "?":
           setShowShortcuts(true);
@@ -185,7 +191,15 @@ function App() {
           break;
         case "i":
         case "I":
-          navigate("invoice");
+          navigate("interviews");
+          break;
+        case "x":
+        case "X":
+          navigate("chat");
+          break;
+        case "y":
+        case "Y":
+          navigate("payslips");
           break;
         case "s":
         case "S":
@@ -203,33 +217,47 @@ function App() {
     return () => window.removeEventListener("keydown", handleKey);
   }, []);
 
-  const showToast = (message, type = "success") => {
-    setToast({ message, type });
+  const showToast = (message) => {
+    setToast({ message });
     setTimeout(() => setToast(null), 3000);
   };
-
   const toggleDark = () => {
     const next = !isDark;
     setIsDark(next);
     localStorage.setItem("theme", next ? "dark" : "light");
     showToast(next ? "🌙 Dark mode enabled" : "☀️ Light mode enabled");
   };
-
   const navigate = (page) => {
     setActivePage(page);
     addRecentItem(page, PAGE_TITLES[page] || page, PAGE_ICONS[page] || "📌");
     if (isMobile) setSidebarOpen(false);
     closeAll();
   };
-
   const handleToggleFav = (page) => {
     const wasAdded = !isFavourite(page);
     toggleFavourite(page, PAGE_TITLES[page] || page, PAGE_ICONS[page] || "📌");
     showToast(
       wasAdded
-        ? `⭐ ${PAGE_TITLES[page]} added to favourites`
+        ? `⭐ ${PAGE_TITLES[page]} added`
         : `${PAGE_TITLES[page]} removed from favourites`,
     );
+  };
+  const handleLogin = (u) => {
+    setUser(u);
+    setActivePage("home");
+  };
+  const handleLogout = () => {
+    localStorage.removeItem("user");
+    localStorage.removeItem("token");
+    setUser(null);
+  };
+  const closeAll = () => {
+    setShowNotif(false);
+    setShowProfile(false);
+    setShowQuickAdd(false);
+    setShowRecent(false);
+    setShowFavs(false);
+    if (isMobile) setSidebarOpen(false);
   };
 
   const t = {
@@ -244,38 +272,13 @@ function App() {
     hover: isDark ? "rgba(255,255,255,0.05)" : "#f8f9fc",
   };
 
-  const handleLogin = (u) => {
-    setUser(u);
-    setActivePage("home");
-  };
-  const handleLogout = () => {
-    localStorage.removeItem("user");
-    setUser(null);
-  };
-  const closeAll = () => {
-    setShowNotif(false);
-    setShowApps(false);
-    setShowProfile(false);
-    setShowQuickAdd(false);
-    setShowRecent(false);
-    setShowFavs(false);
-    if (isMobile) setSidebarOpen(false);
-  };
-
-  const getRoleColor = (role) => {
-    switch (role) {
-      case "Admin":
-        return "#ef4444";
-      case "Recruiter":
-        return "#10b981";
-      case "Sales":
-        return "#3b82f6";
-      case "HR Manager":
-        return "#8b5cf6";
-      default:
-        return "#6b7280";
-    }
-  };
+  const getRoleColor = (role) =>
+    ({
+      Admin: "#ef4444",
+      Recruiter: "#10b981",
+      Sales: "#3b82f6",
+      "HR Manager": "#8b5cf6",
+    })[role] || "#6b7280";
 
   const renderPage = () => {
     switch (activePage) {
@@ -323,6 +326,12 @@ function App() {
         return <Goals />;
       case "notes":
         return <Notes />;
+      case "payslips":
+        return <Payslips />;
+      case "interviews":
+        return <InterviewScheduler />;
+      case "chat":
+        return <InternalChat />;
       default:
         return <Dashboard user={user} onNavigate={navigate} />;
     }
@@ -335,20 +344,12 @@ function App() {
     { label: "New Candidate", icon: "🪪", page: "candidates" },
     { label: "New Job", icon: "📋", page: "jobs" },
     { label: "New Deal", icon: "🤝", page: "deals" },
-    { label: "New Task", icon: "✅", page: "tasks" },
+    { label: "Schedule Interview", icon: "🎤", page: "interviews" },
     { label: "Meeting", icon: "📅", page: "meetings" },
     { label: "Log Call", icon: "📞", page: "calls" },
     { label: "Placement", icon: "🏆", page: "placements" },
     { label: "Invoice", icon: "🧾", page: "invoice" },
     { label: "Note", icon: "📝", page: "notes" },
-  ];
-
-  const bottomNav = [
-    { id: "home", icon: "🏠", label: "Home" },
-    { id: "leads", icon: "👤", label: "Leads" },
-    { id: "candidates", icon: "🪪", label: "Candidates" },
-    { id: "tasks", icon: "✅", label: "Tasks" },
-    { id: "settings", icon: "⚙️", label: "More" },
   ];
 
   const shortcuts = [
@@ -365,11 +366,19 @@ function App() {
     { key: "G", label: "Goals" },
     { key: "N", label: "Notes" },
     { key: "K", label: "Calendar" },
-    { key: "I", label: "Invoice" },
+    { key: "I", label: "Interviews" },
+    { key: "X", label: "Chat" },
+    { key: "Y", label: "Payslips" },
     { key: "S", label: "Settings" },
-    { key: "/", label: "Focus Search" },
-    { key: "?", label: "Show Shortcuts" },
-    { key: "Esc", label: "Close Panels" },
+    { key: "/", label: "Search" },
+  ];
+
+  const bottomNav = [
+    { id: "home", icon: "🏠", label: "Home" },
+    { id: "leads", icon: "👤", label: "Leads" },
+    { id: "chat", icon: "💬", label: "Chat" },
+    { id: "tasks", icon: "✅", label: "Tasks" },
+    { id: "settings", icon: "⚙️", label: "More" },
   ];
 
   return (
@@ -382,7 +391,6 @@ function App() {
       }}
       onClick={closeAll}
     >
-      {/* Toast Notification */}
       {toast && (
         <div
           style={{ ...st.toast, background: isDark ? "#1a1d27" : "#0f1117" }}
@@ -391,7 +399,6 @@ function App() {
         </div>
       )}
 
-      {/* Keyboard Shortcuts Modal */}
       {showShortcuts && (
         <div
           style={st.shortcutsOverlay}
@@ -427,14 +434,19 @@ function App() {
                   height: "30px",
                   cursor: "pointer",
                   color: t.text,
-                  fontSize: "14px",
                 }}
                 onClick={() => setShowShortcuts(false)}
               >
                 ✕
               </button>
             </div>
-            <div style={st.shortcutsGrid}>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: "8px",
+              }}
+            >
               {shortcuts.map((sh) => (
                 <div
                   key={sh.key}
@@ -466,28 +478,6 @@ function App() {
                   </kbd>
                 </div>
               ))}
-            </div>
-            <div
-              style={{
-                marginTop: "16px",
-                fontSize: "12px",
-                color: t.textSub,
-                textAlign: "center",
-              }}
-            >
-              Press{" "}
-              <kbd
-                style={{
-                  background: t.bgInput,
-                  border: `1px solid ${t.border}`,
-                  borderRadius: "4px",
-                  padding: "1px 6px",
-                  fontFamily: "monospace",
-                }}
-              >
-                ?
-              </kbd>{" "}
-              anytime to show this
             </div>
           </div>
         </div>
@@ -529,7 +519,6 @@ function App() {
           ...(isMobile ? { width: "100%", paddingBottom: "64px" } : {}),
         }}
       >
-        {/* Topbar */}
         <div
           style={{
             ...st.topbar,
@@ -565,7 +554,6 @@ function App() {
               >
                 {PAGE_TITLES[activePage]}
               </span>
-              {/* Favourite Star */}
               <button
                 style={{
                   background: "none",
@@ -573,17 +561,11 @@ function App() {
                   cursor: "pointer",
                   fontSize: "14px",
                   opacity: 0.7,
-                  padding: "2px",
                 }}
                 onClick={(e) => {
                   e.stopPropagation();
                   handleToggleFav(activePage);
                 }}
-                title={
-                  isFavourite(activePage)
-                    ? "Remove from favourites"
-                    : "Add to favourites"
-                }
               >
                 {isFavourite(activePage) ? "⭐" : "☆"}
               </button>
@@ -609,12 +591,11 @@ function App() {
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && searchVal.trim()) {
                       const q = searchVal.toLowerCase();
-                      const pages = [
+                      [
                         "leads",
                         "contacts",
-                        "accounts",
-                        "deals",
                         "candidates",
+                        "deals",
                         "jobs",
                         "tasks",
                         "meetings",
@@ -626,11 +607,11 @@ function App() {
                         "notes",
                         "calendar",
                         "invoice",
-                        "settings",
-                      ];
-                      pages.forEach((p) => {
-                        if (q.includes(p.replace(/s$/, "").slice(0, 4)))
-                          navigate(p);
+                        "payslips",
+                        "interviews",
+                        "chat",
+                      ].forEach((p) => {
+                        if (q.includes(p.slice(0, 4))) navigate(p);
                       });
                       setSearchVal("");
                     }
@@ -644,30 +625,14 @@ function App() {
                     ✕
                   </span>
                 )}
-                <kbd
-                  style={{
-                    background: t.bgInput,
-                    border: `1px solid ${t.border}`,
-                    borderRadius: "4px",
-                    padding: "1px 5px",
-                    fontSize: "10px",
-                    color: t.textSub,
-                    fontFamily: "monospace",
-                    marginLeft: "4px",
-                  }}
-                >
-                  /
-                </kbd>
               </div>
             </div>
           )}
 
           <div style={{ ...st.tbRight, gap: isMobile ? "2px" : "4px" }}>
-            {/* Quick Add */}
             <div style={{ position: "relative" }}>
               <button
                 style={st.quickAdd}
-                title="Quick Add (Q)"
                 onClick={(e) => {
                   e.stopPropagation();
                   closeAll();
@@ -696,21 +661,26 @@ function App() {
                   >
                     Quick Add
                   </div>
-                  <div style={st.dropGrid}>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1fr 1fr",
+                      gap: "2px",
+                      padding: "8px",
+                    }}
+                  >
                     {quickAddItems.map((item) => (
                       <div
                         key={item.label}
                         style={{
-                          ...st.dropGridItem,
-                          ...{ background: "transparent" },
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "8px",
+                          padding: "8px 10px",
+                          borderRadius: "8px",
+                          cursor: "pointer",
                         }}
                         onClick={() => navigate(item.page)}
-                        onMouseEnter={(e) =>
-                          (e.currentTarget.style.background = t.hover)
-                        }
-                        onMouseLeave={(e) =>
-                          (e.currentTarget.style.background = "transparent")
-                        }
                       >
                         <span style={{ fontSize: "16px" }}>{item.icon}</span>
                         <span
@@ -729,201 +699,180 @@ function App() {
               )}
             </div>
 
-            {/* Favourites */}
             {!isMobile && (
-              <div style={{ position: "relative" }}>
-                <button
-                  style={st.iconBtn}
-                  title="Favourites"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    closeAll();
-                    setShowFavs(!showFavs);
-                  }}
-                >
-                  <span style={{ fontSize: "16px" }}>⭐</span>
-                </button>
-                {showFavs && (
-                  <div
-                    style={{
-                      ...st.dropdown,
-                      background: t.bgCard,
-                      border: `1px solid ${t.border}`,
-                      width: "220px",
+              <>
+                <div style={{ position: "relative" }}>
+                  <button
+                    style={st.iconBtn}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      closeAll();
+                      setShowFavs(!showFavs);
                     }}
-                    onClick={(e) => e.stopPropagation()}
                   >
+                    ⭐
+                  </button>
+                  {showFavs && (
                     <div
                       style={{
-                        ...st.dropHeader,
-                        color: t.textSub,
-                        borderBottom: `1px solid ${t.borderLight}`,
+                        ...st.dropdown,
+                        background: t.bgCard,
+                        border: `1px solid ${t.border}`,
+                        width: "220px",
                       }}
+                      onClick={(e) => e.stopPropagation()}
                     >
-                      ⭐ Favourites
-                    </div>
-                    {favourites.length === 0 ? (
                       <div
                         style={{
-                          padding: "20px",
-                          textAlign: "center",
+                          ...st.dropHeader,
                           color: t.textSub,
-                          fontSize: "12.5px",
+                          borderBottom: `1px solid ${t.borderLight}`,
                         }}
                       >
-                        Click ☆ next to page title to add favourites
+                        ⭐ Favourites
                       </div>
-                    ) : (
-                      favourites.map((f) => (
+                      {favourites.length === 0 ? (
                         <div
-                          key={f.page}
                           style={{
-                            padding: "10px 16px",
-                            cursor: "pointer",
-                            display: "flex",
-                            alignItems: "center",
-                            gap: "10px",
-                            color: t.text,
-                            fontSize: "13px",
-                            fontWeight: "500",
+                            padding: "20px",
+                            textAlign: "center",
+                            color: t.textSub,
+                            fontSize: "12.5px",
                           }}
-                          onClick={() => navigate(f.page)}
-                          onMouseEnter={(e) =>
-                            (e.currentTarget.style.background = t.hover)
-                          }
-                          onMouseLeave={(e) =>
-                            (e.currentTarget.style.background = "transparent")
-                          }
                         >
-                          <span style={{ fontSize: "16px" }}>{f.icon}</span>
-                          {f.label}
+                          Click ☆ to add favourites
                         </div>
-                      ))
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Recently Viewed */}
-            {!isMobile && (
-              <div style={{ position: "relative" }}>
-                <button
-                  style={st.iconBtn}
-                  title="Recently Viewed"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    closeAll();
-                    setShowRecent(!showRecent);
-                  }}
-                >
-                  <span style={{ fontSize: "16px" }}>🕐</span>
-                </button>
-                {showRecent && (
-                  <div
-                    style={{
-                      ...st.dropdown,
-                      background: t.bgCard,
-                      border: `1px solid ${t.border}`,
-                      width: "240px",
-                    }}
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <div
-                      style={{
-                        ...st.dropHeader,
-                        color: t.textSub,
-                        borderBottom: `1px solid ${t.borderLight}`,
-                      }}
-                    >
-                      🕐 Recently Viewed
-                      {recentItems.length > 0 && (
-                        <span
-                          style={{
-                            fontSize: "11px",
-                            color: "#6366f1",
-                            cursor: "pointer",
-                            fontWeight: "600",
-                          }}
-                          onClick={clearRecent}
-                        >
-                          Clear
-                        </span>
+                      ) : (
+                        favourites.map((f) => (
+                          <div
+                            key={f.page}
+                            style={{
+                              padding: "10px 16px",
+                              cursor: "pointer",
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "10px",
+                              color: t.text,
+                              fontSize: "13px",
+                            }}
+                            onClick={() => navigate(f.page)}
+                          >
+                            <span>{f.icon}</span>
+                            {f.label}
+                          </div>
+                        ))
                       )}
                     </div>
-                    {recentItems.length === 0 ? (
+                  )}
+                </div>
+
+                <div style={{ position: "relative" }}>
+                  <button
+                    style={st.iconBtn}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      closeAll();
+                      setShowRecent(!showRecent);
+                    }}
+                  >
+                    🕐
+                  </button>
+                  {showRecent && (
+                    <div
+                      style={{
+                        ...st.dropdown,
+                        background: t.bgCard,
+                        border: `1px solid ${t.border}`,
+                        width: "240px",
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       <div
                         style={{
-                          padding: "20px",
-                          textAlign: "center",
+                          ...st.dropHeader,
                           color: t.textSub,
-                          fontSize: "12.5px",
+                          borderBottom: `1px solid ${t.borderLight}`,
                         }}
                       >
-                        No recent pages yet
+                        🕐 Recently Viewed
+                        {recentItems.length > 0 && (
+                          <span
+                            style={{
+                              fontSize: "11px",
+                              color: "#6366f1",
+                              cursor: "pointer",
+                              fontWeight: "600",
+                            }}
+                            onClick={clearRecent}
+                          >
+                            Clear
+                          </span>
+                        )}
                       </div>
-                    ) : (
-                      recentItems.map((item, i) => (
+                      {recentItems.length === 0 ? (
                         <div
-                          key={i}
                           style={{
-                            padding: "9px 16px",
-                            cursor: "pointer",
-                            display: "flex",
-                            alignItems: "center",
-                            gap: "10px",
-                            color: t.text,
-                            fontSize: "13px",
-                            fontWeight: "500",
+                            padding: "20px",
+                            textAlign: "center",
+                            color: t.textSub,
+                            fontSize: "12.5px",
                           }}
-                          onClick={() => navigate(item.page)}
-                          onMouseEnter={(e) =>
-                            (e.currentTarget.style.background = t.hover)
-                          }
-                          onMouseLeave={(e) =>
-                            (e.currentTarget.style.background = "transparent")
-                          }
                         >
-                          <span style={{ fontSize: "16px" }}>{item.icon}</span>
-                          <div style={{ flex: 1 }}>
-                            <div
-                              style={{
-                                fontSize: "12.5px",
-                                fontWeight: "600",
-                                color: t.text,
-                              }}
-                            >
-                              {item.label}
-                            </div>
-                            <div
-                              style={{ fontSize: "10.5px", color: t.textSub }}
-                            >
-                              {new Date(item.time).toLocaleTimeString("en-IN", {
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              })}
+                          No recent pages
+                        </div>
+                      ) : (
+                        recentItems.map((item, i) => (
+                          <div
+                            key={i}
+                            style={{
+                              padding: "9px 16px",
+                              cursor: "pointer",
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "10px",
+                              color: t.text,
+                              fontSize: "13px",
+                            }}
+                            onClick={() => navigate(item.page)}
+                          >
+                            <span>{item.icon}</span>
+                            <div style={{ flex: 1 }}>
+                              <div
+                                style={{
+                                  fontSize: "12.5px",
+                                  fontWeight: "600",
+                                }}
+                              >
+                                {item.label}
+                              </div>
+                              <div
+                                style={{ fontSize: "10.5px", color: t.textSub }}
+                              >
+                                {new Date(item.time).toLocaleTimeString(
+                                  "en-IN",
+                                  { hour: "2-digit", minute: "2-digit" },
+                                )}
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                )}
-              </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
+              </>
             )}
 
-            {/* Notifications */}
             <div style={{ position: "relative" }}>
               <button
                 style={st.iconBtn}
-                title="Notifications"
                 onClick={(e) => {
                   e.stopPropagation();
                   closeAll();
                   setShowNotif(!showNotif);
                 }}
               >
-                <span style={{ fontSize: "16px" }}>🔔</span>
+                🔔
                 {unreadCount > 0 && <span style={st.badge}>{unreadCount}</span>}
               </button>
               {showNotif && (
@@ -944,7 +893,7 @@ function App() {
                       borderBottom: `1px solid ${t.borderLight}`,
                     }}
                   >
-                    Notifications
+                    Notifications{" "}
                     <span
                       style={{
                         fontSize: "11px",
@@ -979,9 +928,7 @@ function App() {
                           navigate(n.page);
                         }}
                       >
-                        <span style={{ fontSize: "18px", marginTop: "1px" }}>
-                          {n.icon}
-                        </span>
+                        <span style={{ fontSize: "18px" }}>{n.icon}</span>
                         <div style={{ flex: 1 }}>
                           <div
                             style={{
@@ -1010,13 +957,7 @@ function App() {
                             gap: "4px",
                           }}
                         >
-                          <span
-                            style={{
-                              fontSize: "10px",
-                              color: t.textSub,
-                              whiteSpace: "nowrap",
-                            }}
-                          >
+                          <span style={{ fontSize: "10px", color: t.textSub }}>
                             {n.time}
                           </span>
                           {!n.read && (
@@ -1033,81 +974,50 @@ function App() {
                       </div>
                     ))}
                   </div>
-                  <div
-                    style={{
-                      padding: "10px 16px",
-                      textAlign: "center",
-                      fontSize: "12px",
-                      color: "#6366f1",
-                      cursor: "pointer",
-                      fontWeight: "600",
-                      borderTop: `1px solid ${t.borderLight}`,
-                    }}
-                    onClick={() => navigate("reports")}
-                  >
-                    View All Activity →
-                  </div>
                 </div>
               )}
             </div>
 
-            {/* Dark Mode */}
             <button
               style={st.iconBtn}
-              title={isDark ? "Light Mode" : "Dark Mode"}
+              onClick={(e) => {
+                e.stopPropagation();
+                navigate("chat");
+              }}
+            >
+              💬
+            </button>
+            <button
+              style={st.iconBtn}
               onClick={(e) => {
                 e.stopPropagation();
                 toggleDark();
               }}
             >
-              <span style={{ fontSize: "16px" }}>{isDark ? "☀️" : "🌙"}</span>
+              {isDark ? "☀️" : "🌙"}
             </button>
-
-            {/* Keyboard Shortcuts */}
             {!isMobile && (
               <button
                 style={st.iconBtn}
-                title="Keyboard Shortcuts (?)"
                 onClick={(e) => {
                   e.stopPropagation();
                   setShowShortcuts(true);
                 }}
               >
-                <span
-                  style={{
-                    fontSize: "14px",
-                    color: t.textSub,
-                    fontWeight: "700",
-                  }}
-                >
-                  ?
-                </span>
+                ?
               </button>
             )}
-
             {!isMobile && (
-              <>
-                <button
-                  style={st.iconBtn}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    navigate("calendar");
-                  }}
-                >
-                  <span style={{ fontSize: "16px" }}>🗓️</span>
-                </button>
-                <div
-                  style={{
-                    width: "1px",
-                    height: "22px",
-                    background: t.border,
-                    margin: "0 6px",
-                  }}
-                />
-              </>
+              <div
+                style={{
+                  width: "1px",
+                  height: "22px",
+                  background: t.border,
+                  margin: "0 6px",
+                }}
+              />
             )}
 
-            {/* User Profile */}
             <div style={{ position: "relative" }}>
               <div
                 style={{
@@ -1219,10 +1129,11 @@ function App() {
                   </div>
                   {[
                     { icon: "🏠", label: "Home", page: "home" },
+                    { icon: "💬", label: "Chat", page: "chat" },
+                    { icon: "🎤", label: "Interviews", page: "interviews" },
                     { icon: "🗓️", label: "Calendar", page: "calendar" },
                     { icon: "🎯", label: "Goals", page: "goals" },
-                    { icon: "📝", label: "Notes", page: "notes" },
-                    { icon: "🧾", label: "Invoice", page: "invoice" },
+                    { icon: "💵", label: "Payslips", page: "payslips" },
                     { icon: "⚙️", label: "Settings", page: "settings" },
                   ].map((item) => (
                     <div
@@ -1237,12 +1148,6 @@ function App() {
                         color: t.text,
                       }}
                       onClick={() => navigate(item.page)}
-                      onMouseEnter={(e) =>
-                        (e.currentTarget.style.background = t.hover)
-                      }
-                      onMouseLeave={(e) =>
-                        (e.currentTarget.style.background = "transparent")
-                      }
                     >
                       {item.icon} {item.label}
                     </div>
@@ -1260,20 +1165,6 @@ function App() {
                     onClick={toggleDark}
                   >
                     {isDark ? "☀️ Light Mode" : "🌙 Dark Mode"}
-                  </div>
-                  <div
-                    style={{
-                      padding: "9px 16px",
-                      fontSize: "13px",
-                      cursor: "pointer",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "8px",
-                      color: t.text,
-                    }}
-                    onClick={() => setShowShortcuts(true)}
-                  >
-                    ⌨️ Keyboard Shortcuts
                   </div>
                   <div style={{ height: "1px", background: t.borderLight }} />
                   <div
@@ -1296,7 +1187,6 @@ function App() {
           </div>
         </div>
 
-        {/* Favourites Bar - shows when there are favourites */}
         {!isMobile && favourites.length > 0 && (
           <div
             style={{
@@ -1347,7 +1237,6 @@ function App() {
           </div>
         )}
 
-        {/* Content */}
         <div
           style={{ flex: 1, overflowY: "auto", background: t.bg }}
           onClick={closeAll}
@@ -1355,7 +1244,6 @@ function App() {
           {renderPage()}
         </div>
 
-        {/* Mobile Bottom Nav */}
         {isMobile && (
           <div
             style={{
@@ -1491,7 +1379,6 @@ const st = {
     alignItems: "center",
     justifyContent: "center",
     fontSize: "20px",
-    fontWeight: "300",
     boxShadow: "0 2px 8px rgba(99,102,241,0.3)",
   },
   iconBtn: {
@@ -1505,6 +1392,7 @@ const st = {
     alignItems: "center",
     justifyContent: "center",
     position: "relative",
+    fontSize: "16px",
   },
   badge: {
     position: "absolute",
@@ -1561,20 +1449,6 @@ const st = {
     alignItems: "center",
     justifyContent: "space-between",
   },
-  dropGrid: {
-    display: "grid",
-    gridTemplateColumns: "1fr 1fr",
-    gap: "2px",
-    padding: "8px",
-  },
-  dropGridItem: {
-    display: "flex",
-    alignItems: "center",
-    gap: "8px",
-    padding: "8px 10px",
-    borderRadius: "8px",
-    cursor: "pointer",
-  },
   toast: {
     position: "fixed",
     bottom: "24px",
@@ -1587,7 +1461,6 @@ const st = {
     fontWeight: "600",
     zIndex: 9999,
     boxShadow: "0 8px 32px rgba(0,0,0,0.3)",
-    animation: "fadeIn 0.2s ease",
   },
   shortcutsOverlay: {
     position: "fixed",
@@ -1606,11 +1479,6 @@ const st = {
     maxHeight: "80vh",
     overflowY: "auto",
     boxShadow: "0 32px 80px rgba(0,0,0,0.3)",
-  },
-  shortcutsGrid: {
-    display: "grid",
-    gridTemplateColumns: "1fr 1fr",
-    gap: "8px",
   },
 };
 
