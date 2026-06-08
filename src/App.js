@@ -25,6 +25,9 @@ import Notes from "./pages/Notes";
 import Payslips from "./pages/Payslips";
 import InterviewScheduler from "./pages/InterviewScheduler";
 import InternalChat from "./pages/InternalChat";
+import LeaveManagement from "./pages/LeaveManagement";
+import Attendance from "./pages/Attendance";
+import EmployeeManagement from "./pages/EmployeeManagement";
 import Sidebar from "./components/Sidebar";
 import useNotifications from "./hooks/Notifications";
 import useRecentlyViewed from "./hooks/useRecentlyViewed";
@@ -56,6 +59,9 @@ const PAGE_TITLES = {
   payslips: "Payslips",
   interviews: "Interview Scheduler",
   chat: "Internal Chat",
+  leaves: "Leave Management",
+  attendance: "Attendance",
+  employees: "Employee Management",
 };
 
 const PAGE_ICONS = {
@@ -84,6 +90,9 @@ const PAGE_ICONS = {
   payslips: "💵",
   interviews: "🎤",
   chat: "💬",
+  leaves: "🌴",
+  attendance: "⏰",
+  employees: "👥",
 };
 
 function App() {
@@ -201,6 +210,18 @@ function App() {
         case "Y":
           navigate("payslips");
           break;
+        case "v":
+        case "V":
+          navigate("leaves");
+          break;
+        case "z":
+        case "Z":
+          navigate("attendance");
+          break;
+        case "e":
+        case "E":
+          navigate("employees");
+          break;
         case "s":
         case "S":
           navigate("settings");
@@ -238,7 +259,7 @@ function App() {
     toggleFavourite(page, PAGE_TITLES[page] || page, PAGE_ICONS[page] || "📌");
     showToast(
       wasAdded
-        ? `⭐ ${PAGE_TITLES[page]} added`
+        ? `⭐ ${PAGE_TITLES[page]} added to favourites`
         : `${PAGE_TITLES[page]} removed from favourites`,
     );
   };
@@ -332,6 +353,12 @@ function App() {
         return <InterviewScheduler />;
       case "chat":
         return <InternalChat />;
+      case "leaves":
+        return <LeaveManagement />;
+      case "attendance":
+        return <Attendance />;
+      case "employees":
+        return <EmployeeManagement />;
       default:
         return <Dashboard user={user} onNavigate={navigate} />;
     }
@@ -340,14 +367,14 @@ function App() {
   if (!user) return <Login onLogin={handleLogin} />;
 
   const quickAddItems = [
+    { label: "Add Employee", icon: "👥", page: "employees" },
     { label: "New Lead", icon: "👤", page: "leads" },
     { label: "New Candidate", icon: "🪪", page: "candidates" },
     { label: "New Job", icon: "📋", page: "jobs" },
     { label: "New Deal", icon: "🤝", page: "deals" },
     { label: "Schedule Interview", icon: "🎤", page: "interviews" },
-    { label: "Meeting", icon: "📅", page: "meetings" },
-    { label: "Log Call", icon: "📞", page: "calls" },
-    { label: "Placement", icon: "🏆", page: "placements" },
+    { label: "Apply Leave", icon: "🌴", page: "leaves" },
+    { label: "Mark Attendance", icon: "⏰", page: "attendance" },
     { label: "Invoice", icon: "🧾", page: "invoice" },
     { label: "Note", icon: "📝", page: "notes" },
   ];
@@ -369,15 +396,19 @@ function App() {
     { key: "I", label: "Interviews" },
     { key: "X", label: "Chat" },
     { key: "Y", label: "Payslips" },
+    { key: "V", label: "Leave Management" },
+    { key: "Z", label: "Attendance" },
+    { key: "E", label: "Employees" },
     { key: "S", label: "Settings" },
     { key: "/", label: "Search" },
+    { key: "?", label: "Shortcuts" },
   ];
 
   const bottomNav = [
     { id: "home", icon: "🏠", label: "Home" },
     { id: "leads", icon: "👤", label: "Leads" },
     { id: "chat", icon: "💬", label: "Chat" },
-    { id: "tasks", icon: "✅", label: "Tasks" },
+    { id: "leaves", icon: "🌴", label: "Leaves" },
     { id: "settings", icon: "⚙️", label: "More" },
   ];
 
@@ -391,6 +422,7 @@ function App() {
       }}
       onClick={closeAll}
     >
+      {/* Toast */}
       {toast && (
         <div
           style={{ ...st.toast, background: isDark ? "#1a1d27" : "#0f1117" }}
@@ -399,6 +431,7 @@ function App() {
         </div>
       )}
 
+      {/* Keyboard Shortcuts Modal */}
       {showShortcuts && (
         <div
           style={st.shortcutsOverlay}
@@ -434,6 +467,7 @@ function App() {
                   height: "30px",
                   cursor: "pointer",
                   color: t.text,
+                  fontSize: "14px",
                 }}
                 onClick={() => setShowShortcuts(false)}
               >
@@ -519,6 +553,7 @@ function App() {
           ...(isMobile ? { width: "100%", paddingBottom: "64px" } : {}),
         }}
       >
+        {/* Topbar */}
         <div
           style={{
             ...st.topbar,
@@ -544,7 +579,7 @@ function App() {
 
           <div style={st.tbLeft}>
             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-              <span>{PAGE_ICONS[activePage]}</span>
+              <span style={{ fontSize: "16px" }}>{PAGE_ICONS[activePage]}</span>
               <span
                 style={{
                   fontSize: isMobile ? "14px" : "15px",
@@ -561,6 +596,7 @@ function App() {
                   cursor: "pointer",
                   fontSize: "14px",
                   opacity: 0.7,
+                  padding: "2px",
                 }}
                 onClick={(e) => {
                   e.stopPropagation();
@@ -581,7 +617,7 @@ function App() {
                   border: `1.5px solid ${t.border}`,
                 }}
               >
-                <span>🔍</span>
+                <span style={{ fontSize: "13px" }}>🔍</span>
                 <input
                   className="search-input"
                   style={{ ...st.searchInput, color: t.text }}
@@ -591,45 +627,48 @@ function App() {
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && searchVal.trim()) {
                       const q = searchVal.toLowerCase();
-                      [
-                        "leads",
-                        "contacts",
-                        "candidates",
-                        "deals",
-                        "jobs",
-                        "tasks",
-                        "meetings",
-                        "calls",
-                        "placements",
-                        "reports",
-                        "analytics",
-                        "goals",
-                        "notes",
-                        "calendar",
-                        "invoice",
-                        "payslips",
-                        "interviews",
-                        "chat",
-                      ].forEach((p) => {
-                        if (q.includes(p.slice(0, 4))) navigate(p);
-                      });
+                      const found = Object.keys(PAGE_TITLES).find(
+                        (p) =>
+                          PAGE_TITLES[p].toLowerCase().includes(q) ||
+                          p.includes(q),
+                      );
+                      if (found) navigate(found);
                       setSearchVal("");
                     }
                   }}
                 />
                 {searchVal && (
                   <span
-                    style={{ color: t.textSub, cursor: "pointer" }}
+                    style={{
+                      color: t.textSub,
+                      cursor: "pointer",
+                      fontSize: "12px",
+                    }}
                     onClick={() => setSearchVal("")}
                   >
                     ✕
                   </span>
                 )}
+                <kbd
+                  style={{
+                    background: t.bgInput,
+                    border: `1px solid ${t.border}`,
+                    borderRadius: "4px",
+                    padding: "1px 5px",
+                    fontSize: "10px",
+                    color: t.textSub,
+                    fontFamily: "monospace",
+                    marginLeft: "4px",
+                  }}
+                >
+                  /
+                </kbd>
               </div>
             </div>
           )}
 
           <div style={{ ...st.tbRight, gap: isMobile ? "2px" : "4px" }}>
+            {/* Quick Add */}
             <div style={{ position: "relative" }}>
               <button
                 style={st.quickAdd}
@@ -699,170 +738,175 @@ function App() {
               )}
             </div>
 
+            {/* Favourites */}
             {!isMobile && (
-              <>
-                <div style={{ position: "relative" }}>
-                  <button
-                    style={st.iconBtn}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      closeAll();
-                      setShowFavs(!showFavs);
+              <div style={{ position: "relative" }}>
+                <button
+                  style={st.iconBtn}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    closeAll();
+                    setShowFavs(!showFavs);
+                  }}
+                >
+                  <span style={{ fontSize: "16px" }}>⭐</span>
+                </button>
+                {showFavs && (
+                  <div
+                    style={{
+                      ...st.dropdown,
+                      background: t.bgCard,
+                      border: `1px solid ${t.border}`,
+                      width: "220px",
                     }}
+                    onClick={(e) => e.stopPropagation()}
                   >
-                    ⭐
-                  </button>
-                  {showFavs && (
                     <div
                       style={{
-                        ...st.dropdown,
-                        background: t.bgCard,
-                        border: `1px solid ${t.border}`,
-                        width: "220px",
+                        ...st.dropHeader,
+                        color: t.textSub,
+                        borderBottom: `1px solid ${t.borderLight}`,
                       }}
-                      onClick={(e) => e.stopPropagation()}
                     >
+                      ⭐ Favourites
+                    </div>
+                    {favourites.length === 0 ? (
                       <div
                         style={{
-                          ...st.dropHeader,
+                          padding: "20px",
+                          textAlign: "center",
                           color: t.textSub,
-                          borderBottom: `1px solid ${t.borderLight}`,
+                          fontSize: "12.5px",
                         }}
                       >
-                        ⭐ Favourites
+                        Click ☆ next to page title to add
                       </div>
-                      {favourites.length === 0 ? (
+                    ) : (
+                      favourites.map((f) => (
                         <div
+                          key={f.page}
                           style={{
-                            padding: "20px",
-                            textAlign: "center",
-                            color: t.textSub,
-                            fontSize: "12.5px",
+                            padding: "10px 16px",
+                            cursor: "pointer",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "10px",
+                            color: t.text,
+                            fontSize: "13px",
+                            fontWeight: "500",
                           }}
+                          onClick={() => navigate(f.page)}
                         >
-                          Click ☆ to add favourites
+                          <span style={{ fontSize: "16px" }}>{f.icon}</span>
+                          {f.label}
                         </div>
-                      ) : (
-                        favourites.map((f) => (
-                          <div
-                            key={f.page}
-                            style={{
-                              padding: "10px 16px",
-                              cursor: "pointer",
-                              display: "flex",
-                              alignItems: "center",
-                              gap: "10px",
-                              color: t.text,
-                              fontSize: "13px",
-                            }}
-                            onClick={() => navigate(f.page)}
-                          >
-                            <span>{f.icon}</span>
-                            {f.label}
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                <div style={{ position: "relative" }}>
-                  <button
-                    style={st.iconBtn}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      closeAll();
-                      setShowRecent(!showRecent);
-                    }}
-                  >
-                    🕐
-                  </button>
-                  {showRecent && (
-                    <div
-                      style={{
-                        ...st.dropdown,
-                        background: t.bgCard,
-                        border: `1px solid ${t.border}`,
-                        width: "240px",
-                      }}
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <div
-                        style={{
-                          ...st.dropHeader,
-                          color: t.textSub,
-                          borderBottom: `1px solid ${t.borderLight}`,
-                        }}
-                      >
-                        🕐 Recently Viewed
-                        {recentItems.length > 0 && (
-                          <span
-                            style={{
-                              fontSize: "11px",
-                              color: "#6366f1",
-                              cursor: "pointer",
-                              fontWeight: "600",
-                            }}
-                            onClick={clearRecent}
-                          >
-                            Clear
-                          </span>
-                        )}
-                      </div>
-                      {recentItems.length === 0 ? (
-                        <div
-                          style={{
-                            padding: "20px",
-                            textAlign: "center",
-                            color: t.textSub,
-                            fontSize: "12.5px",
-                          }}
-                        >
-                          No recent pages
-                        </div>
-                      ) : (
-                        recentItems.map((item, i) => (
-                          <div
-                            key={i}
-                            style={{
-                              padding: "9px 16px",
-                              cursor: "pointer",
-                              display: "flex",
-                              alignItems: "center",
-                              gap: "10px",
-                              color: t.text,
-                              fontSize: "13px",
-                            }}
-                            onClick={() => navigate(item.page)}
-                          >
-                            <span>{item.icon}</span>
-                            <div style={{ flex: 1 }}>
-                              <div
-                                style={{
-                                  fontSize: "12.5px",
-                                  fontWeight: "600",
-                                }}
-                              >
-                                {item.label}
-                              </div>
-                              <div
-                                style={{ fontSize: "10.5px", color: t.textSub }}
-                              >
-                                {new Date(item.time).toLocaleTimeString(
-                                  "en-IN",
-                                  { hour: "2-digit", minute: "2-digit" },
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  )}
-                </div>
-              </>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
             )}
 
+            {/* Recently Viewed */}
+            {!isMobile && (
+              <div style={{ position: "relative" }}>
+                <button
+                  style={st.iconBtn}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    closeAll();
+                    setShowRecent(!showRecent);
+                  }}
+                >
+                  <span style={{ fontSize: "16px" }}>🕐</span>
+                </button>
+                {showRecent && (
+                  <div
+                    style={{
+                      ...st.dropdown,
+                      background: t.bgCard,
+                      border: `1px solid ${t.border}`,
+                      width: "240px",
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div
+                      style={{
+                        ...st.dropHeader,
+                        color: t.textSub,
+                        borderBottom: `1px solid ${t.borderLight}`,
+                      }}
+                    >
+                      🕐 Recently Viewed
+                      {recentItems.length > 0 && (
+                        <span
+                          style={{
+                            fontSize: "11px",
+                            color: "#6366f1",
+                            cursor: "pointer",
+                            fontWeight: "600",
+                          }}
+                          onClick={clearRecent}
+                        >
+                          Clear
+                        </span>
+                      )}
+                    </div>
+                    {recentItems.length === 0 ? (
+                      <div
+                        style={{
+                          padding: "20px",
+                          textAlign: "center",
+                          color: t.textSub,
+                          fontSize: "12.5px",
+                        }}
+                      >
+                        No recent pages yet
+                      </div>
+                    ) : (
+                      recentItems.map((item, i) => (
+                        <div
+                          key={i}
+                          style={{
+                            padding: "9px 16px",
+                            cursor: "pointer",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "10px",
+                            color: t.text,
+                            fontSize: "13px",
+                          }}
+                          onClick={() => navigate(item.page)}
+                        >
+                          <span style={{ fontSize: "16px" }}>{item.icon}</span>
+                          <div style={{ flex: 1 }}>
+                            <div
+                              style={{
+                                fontSize: "12.5px",
+                                fontWeight: "600",
+                                color: t.text,
+                              }}
+                            >
+                              {item.label}
+                            </div>
+                            <div
+                              style={{ fontSize: "10.5px", color: t.textSub }}
+                            >
+                              {new Date(item.time).toLocaleTimeString("en-IN", {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })}
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Notifications */}
             <div style={{ position: "relative" }}>
               <button
                 style={st.iconBtn}
@@ -872,7 +916,7 @@ function App() {
                   setShowNotif(!showNotif);
                 }}
               >
-                🔔
+                <span style={{ fontSize: "16px" }}>🔔</span>
                 {unreadCount > 0 && <span style={st.badge}>{unreadCount}</span>}
               </button>
               {showNotif && (
@@ -893,7 +937,7 @@ function App() {
                       borderBottom: `1px solid ${t.borderLight}`,
                     }}
                   >
-                    Notifications{" "}
+                    Notifications
                     <span
                       style={{
                         fontSize: "11px",
@@ -928,7 +972,9 @@ function App() {
                           navigate(n.page);
                         }}
                       >
-                        <span style={{ fontSize: "18px" }}>{n.icon}</span>
+                        <span style={{ fontSize: "18px", marginTop: "1px" }}>
+                          {n.icon}
+                        </span>
                         <div style={{ flex: 1 }}>
                           <div
                             style={{
@@ -957,7 +1003,13 @@ function App() {
                             gap: "4px",
                           }}
                         >
-                          <span style={{ fontSize: "10px", color: t.textSub }}>
+                          <span
+                            style={{
+                              fontSize: "10px",
+                              color: t.textSub,
+                              whiteSpace: "nowrap",
+                            }}
+                          >
                             {n.time}
                           </span>
                           {!n.read && (
@@ -974,19 +1026,49 @@ function App() {
                       </div>
                     ))}
                   </div>
+                  <div
+                    style={{
+                      padding: "10px 16px",
+                      textAlign: "center",
+                      fontSize: "12px",
+                      color: "#6366f1",
+                      cursor: "pointer",
+                      fontWeight: "600",
+                      borderTop: `1px solid ${t.borderLight}`,
+                    }}
+                    onClick={() => navigate("reports")}
+                  >
+                    View All →
+                  </div>
                 </div>
               )}
             </div>
 
+            {/* Chat */}
             <button
               style={st.iconBtn}
+              title="Chat (X)"
               onClick={(e) => {
                 e.stopPropagation();
                 navigate("chat");
               }}
             >
-              💬
+              <span style={{ fontSize: "16px" }}>💬</span>
             </button>
+
+            {/* Leave */}
+            <button
+              style={st.iconBtn}
+              title="Leave (V)"
+              onClick={(e) => {
+                e.stopPropagation();
+                navigate("leaves");
+              }}
+            >
+              <span style={{ fontSize: "16px" }}>🌴</span>
+            </button>
+
+            {/* Dark Mode */}
             <button
               style={st.iconBtn}
               onClick={(e) => {
@@ -994,8 +1076,10 @@ function App() {
                 toggleDark();
               }}
             >
-              {isDark ? "☀️" : "🌙"}
+              <span style={{ fontSize: "16px" }}>{isDark ? "☀️" : "🌙"}</span>
             </button>
+
+            {/* Shortcuts */}
             {!isMobile && (
               <button
                 style={st.iconBtn}
@@ -1004,9 +1088,18 @@ function App() {
                   setShowShortcuts(true);
                 }}
               >
-                ?
+                <span
+                  style={{
+                    fontSize: "14px",
+                    fontWeight: "700",
+                    color: t.textSub,
+                  }}
+                >
+                  ?
+                </span>
               </button>
             )}
+
             {!isMobile && (
               <div
                 style={{
@@ -1018,6 +1111,7 @@ function App() {
               />
             )}
 
+            {/* User Profile */}
             <div style={{ position: "relative" }}>
               <div
                 style={{
@@ -1129,11 +1223,13 @@ function App() {
                   </div>
                   {[
                     { icon: "🏠", label: "Home", page: "home" },
-                    { icon: "💬", label: "Chat", page: "chat" },
+                    { icon: "👥", label: "Employees", page: "employees" },
+                    { icon: "💬", label: "Team Chat", page: "chat" },
                     { icon: "🎤", label: "Interviews", page: "interviews" },
-                    { icon: "🗓️", label: "Calendar", page: "calendar" },
-                    { icon: "🎯", label: "Goals", page: "goals" },
+                    { icon: "🌴", label: "My Leaves", page: "leaves" },
+                    { icon: "⏰", label: "Attendance", page: "attendance" },
                     { icon: "💵", label: "Payslips", page: "payslips" },
+                    { icon: "🎯", label: "Goals", page: "goals" },
                     { icon: "⚙️", label: "Settings", page: "settings" },
                   ].map((item) => (
                     <div
@@ -1166,6 +1262,20 @@ function App() {
                   >
                     {isDark ? "☀️ Light Mode" : "🌙 Dark Mode"}
                   </div>
+                  <div
+                    style={{
+                      padding: "9px 16px",
+                      fontSize: "13px",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px",
+                      color: t.text,
+                    }}
+                    onClick={() => setShowShortcuts(true)}
+                  >
+                    ⌨️ Keyboard Shortcuts
+                  </div>
                   <div style={{ height: "1px", background: t.borderLight }} />
                   <div
                     style={{
@@ -1187,6 +1297,7 @@ function App() {
           </div>
         </div>
 
+        {/* Favourites Bar */}
         {!isMobile && favourites.length > 0 && (
           <div
             style={{
@@ -1237,6 +1348,7 @@ function App() {
           </div>
         )}
 
+        {/* Page Content */}
         <div
           style={{ flex: 1, overflowY: "auto", background: t.bg }}
           onClick={closeAll}
@@ -1244,6 +1356,7 @@ function App() {
           {renderPage()}
         </div>
 
+        {/* Mobile Bottom Nav */}
         {isMobile && (
           <div
             style={{
@@ -1379,6 +1492,7 @@ const st = {
     alignItems: "center",
     justifyContent: "center",
     fontSize: "20px",
+    fontWeight: "300",
     boxShadow: "0 2px 8px rgba(99,102,241,0.3)",
   },
   iconBtn: {
@@ -1392,7 +1506,6 @@ const st = {
     alignItems: "center",
     justifyContent: "center",
     position: "relative",
-    fontSize: "16px",
   },
   badge: {
     position: "absolute",

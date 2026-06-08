@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import axios from "axios";
 import * as XLSX from "xlsx";
 import { saveAs } from "file-saver";
+import logo from "../logo.jpg";
 
 const BASE_URL = "http://localhost:8080/api";
 const MONTHS = [
@@ -30,7 +31,7 @@ export default function Payslips() {
   const [savedMsg, setSavedMsg] = useState("");
   const [payslipHistory, setPayslipHistory] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
-  const [editModal, setEditModal] = useState(null); // payslip being edited
+  const [editModal, setEditModal] = useState(null);
   const [adjustments, setAdjustments] = useState({
     bonusAmount: 0,
     bonusReason: "",
@@ -84,9 +85,7 @@ export default function Payslips() {
   };
 
   const calcSalary = (emp, adj = adjustments) => {
-    const basic = parseFloat(
-      emp.basicSalary || emp.basic_salary || emp.basicSalary || 0,
-    );
+    const basic = parseFloat(emp.basicSalary || emp.basic_salary || 0);
     const lopDed =
       adj.lopDays > 0 ? (basic / (adj.workingDays || 26)) * adj.lopDays : 0;
     const effBasic = basic - lopDed;
@@ -142,7 +141,7 @@ export default function Payslips() {
 
   const numberToWords = (num) => {
     num = Math.round(num);
-    const ones = [
+    const a = [
       "",
       "One",
       "Two",
@@ -164,7 +163,7 @@ export default function Payslips() {
       "Eighteen",
       "Nineteen",
     ];
-    const tens = [
+    const b = [
       "",
       "",
       "Twenty",
@@ -177,14 +176,12 @@ export default function Payslips() {
       "Ninety",
     ];
     if (num === 0) return "Zero";
-    if (num < 20) return ones[num];
+    if (num < 20) return a[num];
     if (num < 100)
-      return (
-        tens[Math.floor(num / 10)] + (num % 10 ? " " + ones[num % 10] : "")
-      );
+      return b[Math.floor(num / 10)] + (num % 10 ? " " + a[num % 10] : "");
     if (num < 1000)
       return (
-        ones[Math.floor(num / 100)] +
+        a[Math.floor(num / 100)] +
         " Hundred" +
         (num % 100 ? " " + numberToWords(num % 100) : "")
       );
@@ -207,98 +204,206 @@ export default function Payslips() {
     );
   };
 
-  const getEmpInfo = (empId) => employees.find((e) => e.id === empId) || {};
+  // Get last day of month as pay date
+  const getPayDate = (m, y) => {
+    const lastDay = new Date(y, m, 0).getDate();
+    return `${String(lastDay).padStart(2, "0")}/${String(m).padStart(2, "0")}/${y}`;
+  };
 
-  const printPayslip = (ps, sal, empInfo, pMonth, pYear) => {
-    const emp = { ...empInfo, ...ps };
+  const printPayslip = (emp, sal, pMonth, pYear, adj) => {
+    const empData =
+      employees.find((e) => e.id === (emp.employeeId || emp.id)) || emp;
+    const name = emp.employeeName || emp.name || empData.name || "—";
+    const empId =
+      emp.employeeId || empData.employeeId || empData.employee_id || "—";
+    const designation = emp.role || empData.role || "—";
+    const department = emp.department || empData.department || "—";
+    const joiningDate =
+      empData.joiningDate || empData.joining_date || emp.joiningDate || "—";
+    const pan = empData.panNumber || empData.pan_number || emp.panNumber || "—";
+    const bankAcc =
+      empData.bankAccount || empData.bank_account || emp.bankAccount || "—";
+    const workLoc =
+      empData.workLocation ||
+      empData.work_location ||
+      emp.workLocation ||
+      "Bangalore";
+    const workDays = adj?.workingDays || emp.workingDays || 26;
+    const lopDays = adj?.lopDays || emp.lopDays || 0;
+    const paidDays = workDays - lopDays;
+    const payDate = getPayDate(pMonth, pYear);
+
+    // YTD = same as current month for now (can be enhanced)
+    const ytdBasic = sal.basic;
+    const ytdHRA = sal.hra;
+    const ytdSpecial = sal.special;
+    const ytdGross = sal.grossSalary;
+    const ytdPF = sal.pf;
+    const ytdTotal = sal.totalDeductions;
+
     const win = window.open("", "_blank");
-    win.document.write(`<html><head><title>Payslip</title><style>
-      *{margin:0;padding:0;box-sizing:border-box}
-      body{font-family:'Segoe UI',Arial,sans-serif;padding:30px;color:#0f1117;font-size:13px}
-      .hdr{display:flex;justify-content:space-between;padding-bottom:16px;border-bottom:3px solid #6366f1;margin-bottom:20px}
-      .cn{font-size:22px;font-weight:800;color:#6366f1}.cs{font-size:11px;color:#6b7280;margin-top:3px}
-      .pt{font-size:18px;font-weight:800;text-align:right}.pp{font-size:12px;color:#6b7280;text-align:right;margin-top:4px}
-      .conf{font-size:10px;color:#ef4444;font-weight:700;text-align:right;margin-top:2px}
-      .ei{display:grid;grid-template-columns:1fr 1fr;gap:20px;background:#f8f9fc;padding:16px;border-radius:8px;margin-bottom:20px;border:1px solid #e5e7f0}
-      .er{display:flex;gap:8px;margin-bottom:8px}.el{font-size:11px;color:#9ca3af;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;min-width:110px}
-      .ev{font-size:12px;font-weight:700;color:#0f1117}
-      .sg{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px}
-      .sc{border:1px solid #e5e7f0;border-radius:8px;overflow:hidden}
-      .et{padding:10px 14px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;background:#f0fdf4;color:#10b981}
-      .dt{padding:10px 14px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;background:#fef2f2;color:#ef4444}
-      table{width:100%;border-collapse:collapse}td{padding:8px 14px;font-size:12px;border-bottom:1px solid #f8f9fc}
-      td:last-child{text-align:right;font-weight:600}.tr{background:#f8f9fc;font-weight:800}
-      .tr td{padding:10px 14px;font-size:13px;border-top:2px solid #e5e7f0}
-      .ns{background:linear-gradient(135deg,#6366f1,#4f46e5);color:#fff;padding:20px;border-radius:10px;display:flex;justify-content:space-between;align-items:center;margin-bottom:20px}
-      .na{font-size:28px;font-weight:900;letter-spacing:-1px}.nw{font-size:11px;opacity:0.7;margin-top:4px}
-      .fs{display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;margin-top:20px;border-top:1px solid #e5e7f0;padding-top:20px}
-      .fb{text-align:center}.fl{font-size:10px;color:#9ca3af;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:30px}
-      .fl2{border-top:1px solid #374151;padding-top:6px;font-size:11px;color:#6b7280}
-      .gen{text-align:center;font-size:10px;color:#9ca3af;margin-top:20px;border-top:1px solid #f1f3f9;padding-top:12px}
-      @media print{body{padding:15px}}
-    </style></head><body>
-      <div class="hdr">
-        <div><div class="cn">TechNext Staffing Pvt. Ltd.</div><div class="cs">Koramangala, Bengaluru - 560034, Karnataka</div><div class="cs">info@technextstaffing.in</div></div>
-        <div><div class="pt">SALARY PAYSLIP</div><div class="pp">${MONTHS[(pMonth || month) - 1]} ${pYear || year}</div><div class="conf">🔒 CONFIDENTIAL</div></div>
+    win.document.write(`<!DOCTYPE html>
+<html>
+<head>
+  <title>Payslip - ${name} - ${MONTHS[pMonth - 1]} ${pYear}</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family:'Inter',Arial,sans-serif; background:#fff; color:#1a1a1a; font-size:12px; padding:0; }
+    .page { width:794px; min-height:1123px; margin:0 auto; padding:32px 36px; }
+    
+    /* Header */
+    .header { display:flex; justify-content:space-between; align-items:flex-start; padding-bottom:16px; border-bottom:1px solid #e0e0e0; margin-bottom:20px; }
+    .company-logo { display:flex; align-items:center; gap:12px; }
+    .logo-img { width:56px; height:56px; object-fit:contain; }
+    .company-info .company-name { font-size:16px; font-weight:700; color:#1a1a1a; }
+    .company-info .company-addr { font-size:11px; color:#666; margin-top:3px; line-height:1.5; }
+    
+    /* Payslip title */
+    .payslip-title { font-size:13px; font-weight:600; color:#333; margin-bottom:4px; }
+    
+    /* Pay Summary Section */
+    .pay-summary-title { font-size:13px; font-weight:700; color:#1a1a1a; margin-bottom:12px; }
+    .summary-layout { display:flex; gap:20px; margin-bottom:24px; }
+    .summary-left { flex:1; }
+    .summary-right { width:220px; }
+    
+    .info-row { display:flex; margin-bottom:8px; }
+    .info-label { width:130px; font-size:11px; color:#888; font-weight:400; flex-shrink:0; }
+    .info-value { font-size:11px; color:#1a1a1a; font-weight:600; }
+    
+    /* Net Pay Box */
+    .net-pay-box { border:1px solid #e0e0e0; border-radius:6px; padding:16px; text-align:center; }
+    .net-pay-label { font-size:11px; color:#888; margin-bottom:8px; }
+    .net-pay-amount { font-size:26px; font-weight:800; color:#2563eb; margin-bottom:8px; }
+    .net-pay-days { font-size:11px; color:#666; }
+    
+    /* Earnings/Deductions Table */
+    .salary-table { width:100%; border-collapse:collapse; margin-bottom:16px; border:1px solid #e0e0e0; border-radius:6px; overflow:hidden; }
+    .salary-table th { background:#f5f5f5; padding:9px 12px; text-align:left; font-size:11px; font-weight:700; color:#333; border-bottom:1px solid #e0e0e0; }
+    .salary-table th:last-child, .salary-table td:last-child { text-align:right; }
+    .salary-table td { padding:8px 12px; font-size:11.5px; color:#333; border-bottom:1px solid #f0f0f0; }
+    .salary-table tr:last-child td { border-bottom:none; }
+    .salary-table .total-row td { font-weight:700; background:#f9f9f9; border-top:1px solid #e0e0e0; padding:10px 12px; }
+    .ytd { color:#888; }
+    
+    /* Two column layout for earnings/deductions */
+    .salary-layout { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:16px; }
+    
+    /* Net Payable */
+    .net-payable-bar { background:#f0fdf4; border-left:4px solid #22c55e; padding:14px 16px; border-radius:0 6px 6px 0; margin-bottom:20px; }
+    .net-payable-text { font-size:13px; font-weight:700; color:#1a1a1a; }
+    .net-payable-text span { color:#16a34a; }
+    .net-payable-words { font-size:11px; color:#666; margin-top:3px; }
+    
+    /* Footer */
+    .footer-note { font-size:10.5px; color:#888; margin-bottom:6px; }
+    .system-note { text-align:center; font-size:11px; color:#aaa; margin-top:40px; padding-top:16px; border-top:1px solid #f0f0f0; }
+    
+    @media print {
+      body { margin:0; }
+      .page { padding:20px 24px; }
+      @page { size:A4; margin:0; }
+    }
+  </style>
+</head>
+<body>
+<div class="page">
+  <!-- Header -->
+  <div class="header">
+    <div class="company-logo">
+      <div class="company-info">
+        <div class="company-name">TechNext Staffing Pvt. Ltd.</div>
+        <div class="company-addr">MSR Novel Office, Koramangala<br>Bengaluru, Karnataka 560034, India</div>
       </div>
-      <div class="ei">
-        <div>
-          <div class="er"><span class="el">Employee Name</span><span class="ev">${ps.employeeName || emp.name || "—"}</span></div>
-          <div class="er"><span class="el">Employee ID</span><span class="ev">${emp.employeeId || emp.employee_id || "TN00" + emp.id || "—"}</span></div>
-          <div class="er"><span class="el">Designation</span><span class="ev">${emp.role || "—"}</span></div>
-          <div class="er"><span class="el">Department</span><span class="ev">${emp.department || "—"}</span></div>
-        </div>
-        <div>
-          <div class="er"><span class="el">Pay Period</span><span class="ev">${MONTHS[(pMonth || month) - 1]} ${pYear || year}</span></div>
-          <div class="er"><span class="el">Working Days</span><span class="ev">${ps.workingDays || 26}</span></div>
-          <div class="er"><span class="el">Days Present</span><span class="ev">${ps.presentDays || 26}</span></div>
-          <div class="er"><span class="el">LOP Days</span><span class="ev">${ps.lopDays || 0}</span></div>
-        </div>
+    </div>
+    <div style="text-align:right">
+      <div class="payslip-title">Payslip for the month of ${MONTHS[pMonth - 1]} ${pYear}</div>
+    </div>
+  </div>
+
+  <!-- Pay Summary -->
+  <div class="pay-summary-title">Pay Summary</div>
+  <div class="summary-layout">
+    <div class="summary-left">
+      <div class="info-row"><span class="info-label">Employee Name</span><span class="info-value">${name}, ${empId}</span></div>
+      <div class="info-row"><span class="info-label">Designation</span><span class="info-value">${designation}</span></div>
+      <div class="info-row"><span class="info-label">Department</span><span class="info-value">${department}</span></div>
+      <div class="info-row"><span class="info-label">Date of Joining</span><span class="info-value">${joiningDate}</span></div>
+      <div class="info-row"><span class="info-label">Pay Period</span><span class="info-value">${MONTHS[pMonth - 1]} ${pYear}</span></div>
+      <div class="info-row"><span class="info-label">Pay Date</span><span class="info-value">${payDate}</span></div>
+      <div class="info-row"><span class="info-label">PAN</span><span class="info-value">${pan}</span></div>
+      <div class="info-row"><span class="info-label">Bank Account No</span><span class="info-value">${bankAcc}</span></div>
+      <div class="info-row"><span class="info-label">Work Location</span><span class="info-value">${workLoc}</span></div>
+    </div>
+    <div class="summary-right">
+      <div class="net-pay-box">
+        <div class="net-pay-label">Total Net Pay</div>
+        <div class="net-pay-amount">₹${Number(sal.netSalary || 0).toLocaleString("en-IN")}.00</div>
+        <div class="net-pay-days">Paid Days : ${paidDays} | LOP Days : ${lopDays}</div>
       </div>
-      <div class="sg">
-        <div class="sc">
-          <div class="et">💰 Earnings</div>
-          <table>
-            <tr><td>Basic Salary</td><td>₹${Number(sal.basic || sal.basicSalary || 0).toLocaleString("en-IN")}</td></tr>
-            <tr><td>HRA (40%)</td><td>₹${Number(sal.hra || 0).toLocaleString("en-IN")}</td></tr>
-            <tr><td>Transport Allowance</td><td>₹${Number(sal.transport || 0).toLocaleString("en-IN")}</td></tr>
-            <tr><td>Medical Allowance</td><td>₹${Number(sal.medical || 0).toLocaleString("en-IN")}</td></tr>
-            <tr><td>Special Allowance</td><td>₹${Number(sal.special || sal.specialAllowance || 0).toLocaleString("en-IN")}</td></tr>
-            ${Number(sal.bonus || 0) > 0 ? `<tr><td>${ps.bonusReason || "Bonus"}</td><td>₹${Number(sal.bonus).toLocaleString("en-IN")}</td></tr>` : ""}
-            <tr class="tr"><td>Gross Salary</td><td>₹${Number(sal.grossSalary || 0).toLocaleString("en-IN")}</td></tr>
-          </table>
-        </div>
-        <div class="sc">
-          <div class="dt">📉 Deductions</div>
-          <table>
-            <tr><td>Provident Fund (12%)</td><td>₹${Number(sal.pf || 0).toLocaleString("en-IN")}</td></tr>
-            ${Number(sal.esi || 0) > 0 ? `<tr><td>ESI (0.75%)</td><td>₹${Number(sal.esi).toLocaleString("en-IN")}</td></tr>` : ""}
-            <tr><td>Professional Tax</td><td>₹${Number(sal.professionalTax || 0).toLocaleString("en-IN")}</td></tr>
-            ${Number(sal.tds || 0) > 0 ? `<tr><td>TDS</td><td>₹${Number(sal.tds).toLocaleString("en-IN")}</td></tr>` : ""}
-            ${Number(sal.lopDeduction || 0) > 0 ? `<tr><td>LOP Deduction (${ps.lopDays} days)</td><td>₹${Number(sal.lopDeduction).toLocaleString("en-IN")}</td></tr>` : ""}
-            ${Number(sal.extraDed || sal.extraDeduction || 0) > 0 ? `<tr><td>${ps.extraDeductionReason || "Other Deduction"}</td><td>₹${Number(sal.extraDed || sal.extraDeduction).toLocaleString("en-IN")}</td></tr>` : ""}
-            <tr class="tr"><td>Total Deductions</td><td>₹${Number(sal.totalDeductions || 0).toLocaleString("en-IN")}</td></tr>
-          </table>
-        </div>
-      </div>
-      <div class="ns">
-        <div><div style="font-size:13px;font-weight:600;opacity:0.8">NET SALARY PAYABLE</div>
-          <div class="na">₹${Number(sal.netSalary || 0).toLocaleString("en-IN")}</div>
-          <div class="nw">${numberToWords(Number(sal.netSalary || 0))} Rupees Only</div>
-        </div>
-        <div style="text-align:right"><div style="font-size:13px;font-weight:600;opacity:0.8">Payment Mode</div>
-          <div style="font-size:14px;font-weight:700;margin-top:4px">Bank Transfer</div>
-        </div>
-      </div>
-      <div class="fs">
-        <div class="fb"><div class="fl">Employee Signature</div><div class="fl2">${ps.employeeName || emp.name}</div></div>
-        <div class="fb"><div class="fl">HR Manager</div><div class="fl2">Authorized Signatory</div></div>
-        <div class="fb"><div class="fl">Company Seal</div><div class="fl2">TechNext Staffing Pvt. Ltd.</div></div>
-      </div>
-      <div class="gen">Computer-generated payslip. Generated on ${new Date().toLocaleDateString("en-IN")} via TechNext CRM Portal.</div>
-    </body></html>`);
+    </div>
+  </div>
+
+  <!-- Earnings & Deductions -->
+  <div class="salary-layout">
+    <!-- Earnings -->
+    <div>
+      <table class="salary-table">
+        <thead>
+          <tr>
+            <th>Earnings</th>
+            <th>Amount</th>
+            <th>YTD</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>Basic</td><td>₹${Number(sal.basic || 0).toLocaleString("en-IN")}.00</td><td class="ytd">₹${Number(ytdBasic || 0).toLocaleString("en-IN")}.00</td></tr>
+          <tr><td>House Rent Allowance</td><td>₹${Number(sal.hra || 0).toLocaleString("en-IN")}.00</td><td class="ytd">₹${Number(ytdHRA || 0).toLocaleString("en-IN")}.00</td></tr>
+          <tr><td>Transport Allowance</td><td>₹${Number(sal.transport || 0).toLocaleString("en-IN")}.00</td><td class="ytd">₹${Number(sal.transport || 0).toLocaleString("en-IN")}.00</td></tr>
+          <tr><td>Medical Allowance</td><td>₹${Number(sal.medical || 0).toLocaleString("en-IN")}.00</td><td class="ytd">₹${Number(sal.medical || 0).toLocaleString("en-IN")}.00</td></tr>
+          <tr><td>Special Allowance</td><td>₹${Number(sal.special || 0).toLocaleString("en-IN")}.00</td><td class="ytd">₹${Number(ytdSpecial || 0).toLocaleString("en-IN")}.00</td></tr>
+          ${Number(sal.bonus || 0) > 0 ? `<tr><td>${adj?.bonusReason || emp.bonusReason || "Bonus"}</td><td>₹${Number(sal.bonus).toLocaleString("en-IN")}.00</td><td class="ytd">₹${Number(sal.bonus).toLocaleString("en-IN")}.00</td></tr>` : ""}
+          ${Number(sal.lopDeduction || 0) > 0 ? `<tr><td>LOP Deduction (${lopDays} days)</td><td style="color:#ef4444">-₹${Number(sal.lopDeduction).toLocaleString("en-IN")}.00</td><td class="ytd">-₹${Number(sal.lopDeduction).toLocaleString("en-IN")}.00</td></tr>` : ""}
+          <tr class="total-row"><td>Gross Earnings</td><td>₹${Number(sal.grossSalary || 0).toLocaleString("en-IN")}.00</td><td class="ytd"></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <!-- Deductions -->
+    <div>
+      <table class="salary-table">
+        <thead>
+          <tr>
+            <th>Deductions</th>
+            <th>Amount</th>
+            <th>YTD</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>EPF Contribution</td><td>₹${Number(sal.pf || 0).toLocaleString("en-IN")}.00</td><td class="ytd">₹${Number(ytdPF || 0).toLocaleString("en-IN")}.00</td></tr>
+          ${Number(sal.esi || 0) > 0 ? `<tr><td>ESI Contribution</td><td>₹${Number(sal.esi).toLocaleString("en-IN")}.00</td><td class="ytd">₹${Number(sal.esi).toLocaleString("en-IN")}.00</td></tr>` : ""}
+          ${Number(sal.professionalTax || 0) > 0 ? `<tr><td>Professional Tax</td><td>₹${Number(sal.professionalTax).toLocaleString("en-IN")}.00</td><td class="ytd">₹${Number(sal.professionalTax).toLocaleString("en-IN")}.00</td></tr>` : ""}
+          ${Number(sal.tds || 0) > 0 ? `<tr><td>TDS</td><td>₹${Number(sal.tds).toLocaleString("en-IN")}.00</td><td class="ytd">₹${Number(sal.tds).toLocaleString("en-IN")}.00</td></tr>` : ""}
+          ${Number(sal.extraDed || sal.extraDeduction || 0) > 0 ? `<tr><td>${adj?.extraDeductionReason || emp.extraDeductionReason || "Other Deduction"}</td><td>₹${Number(sal.extraDed || sal.extraDeduction).toLocaleString("en-IN")}.00</td><td class="ytd">₹${Number(sal.extraDed || sal.extraDeduction).toLocaleString("en-IN")}.00</td></tr>` : ""}
+          <tr class="total-row"><td>Total Deductions</td><td>₹${Number(sal.totalDeductions || 0).toLocaleString("en-IN")}.00</td><td class="ytd"></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Net Payable Bar -->
+  <div class="net-payable-bar">
+    <div class="net-payable-text">| Total Net Payable <span>₹${Number(sal.netSalary || 0).toLocaleString("en-IN")}.00</span> (${numberToWords(Math.round(Number(sal.netSalary || 0)))} Only)</div>
+    <div class="net-payable-words">**Total Net Payable = Gross Earnings - Total Deductions</div>
+  </div>
+
+  <!-- System Note -->
+  <div class="system-note">-- This is a system-generated document. --</div>
+</div>
+</body>
+</html>`);
     win.document.close();
-    setTimeout(() => win.print(), 500);
+    setTimeout(() => win.print(), 600);
   };
 
   const handleSavePayslip = async () => {
@@ -349,12 +454,12 @@ export default function Payslips() {
     setSaving(true);
     try {
       await axios.post(`${BASE_URL}/payslips`, editModal);
-      setSavedMsg("✅ Payslip updated!");
+      setSavedMsg("✅ Updated!");
       setEditModal(null);
       fetchAllHistory();
       setTimeout(() => setSavedMsg(""), 3000);
     } catch (e) {
-      setSavedMsg("⚠️ Update failed.");
+      setSavedMsg("⚠️ Failed.");
     }
     setSaving(false);
   };
@@ -428,6 +533,18 @@ export default function Payslips() {
     }
   };
 
+  const avatarColors = {
+    Admin: "#ef4444",
+    Recruiter: "#10b981",
+    Sales: "#3b82f6",
+    "HR Manager": "#8b5cf6",
+    Staff: "#6b7280",
+  };
+  const totalPayroll = employees.reduce(
+    (sum, emp) => sum + calcSalary(emp).netSalary,
+    0,
+  );
+
   if (loading)
     return (
       <div
@@ -453,18 +570,6 @@ export default function Payslips() {
       </div>
     );
 
-  const avatarColors = {
-    Admin: "#ef4444",
-    Recruiter: "#10b981",
-    Sales: "#3b82f6",
-    "HR Manager": "#8b5cf6",
-    Staff: "#6b7280",
-  };
-  const totalPayroll = employees.reduce(
-    (sum, emp) => sum + calcSalary(emp).netSalary,
-    0,
-  );
-
   // ===== EMPLOYEE SELF VIEW =====
   if (!isAdmin) {
     const own = employees.find((e) => e.email === currentUser.email);
@@ -474,7 +579,13 @@ export default function Payslips() {
           Profile not found.
         </div>
       );
-    const sal = calcSalary(own);
+    const sal = calcSalary(own, {
+      workingDays: 26,
+      presentDays: 26,
+      lopDays: 0,
+      bonusAmount: 0,
+      extraDeduction: 0,
+    });
     return (
       <div style={s.page}>
         <div style={s.header}>
@@ -507,9 +618,15 @@ export default function Payslips() {
             </div>
             <button
               style={s.printBtn}
-              onClick={() => printPayslip(own, sal, own, month, year)}
+              onClick={() =>
+                printPayslip(own, sal, month, year, {
+                  workingDays: 26,
+                  presentDays: 26,
+                  lopDays: 0,
+                })
+              }
             >
-              🖨️ Download / Print
+              🖨️ Download / Print PDF
             </button>
           </div>
         </div>
@@ -523,13 +640,14 @@ export default function Payslips() {
             >
               {own.name.charAt(0)}
             </div>
-            <div>
+            <div style={{ flex: 1 }}>
               <div style={s.empNameLg}>{own.name}</div>
               <div style={s.empRoleLg}>
                 {own.role} · {own.department || "—"}
               </div>
               <div style={s.empIdLg}>
-                ID: {own.employeeId || own.employee_id || "TN00" + own.id}
+                ID: {own.employeeId || own.employee_id || "TN00" + own.id} |
+                PAN: {own.panNumber || own.pan_number || "—"}
               </div>
             </div>
             <div style={s.empPeriodBadge}>
@@ -542,22 +660,25 @@ export default function Payslips() {
                 NET SALARY — {MONTHS[month - 1]} {year}
               </div>
               <div style={s.netBannerAmount}>
-                ₹{sal.netSalary.toLocaleString("en-IN")}
+                ₹{sal.netSalary.toLocaleString("en-IN")}.00
               </div>
               <div style={s.netBannerWords}>
-                {numberToWords(sal.netSalary)} Rupees Only
+                {numberToWords(sal.netSalary)} Only
               </div>
             </div>
             <div style={{ textAlign: "right" }}>
-              <div style={s.netBannerLabel}>Payment Mode</div>
+              <div style={s.netBannerLabel}>Paid Days: 26 | LOP: 0</div>
               <div
                 style={{
-                  fontSize: "16px",
+                  fontSize: "14px",
                   fontWeight: "700",
                   marginTop: "4px",
                 }}
               >
                 Bank Transfer
+              </div>
+              <div style={s.netBannerWords}>
+                Pay Date: {getPayDate(month, year)}
               </div>
             </div>
           </div>
@@ -568,20 +689,22 @@ export default function Payslips() {
               </div>
               {[
                 { l: "Basic Salary", v: sal.basic },
-                { l: "HRA (40%)", v: sal.hra },
-                { l: "Transport", v: sal.transport },
-                { l: "Medical", v: sal.medical },
+                { l: "House Rent Allowance (HRA)", v: sal.hra },
+                { l: "Transport Allowance", v: sal.transport },
+                { l: "Medical Allowance", v: sal.medical },
                 { l: "Special Allowance", v: sal.special },
               ].map((r) => (
                 <div key={r.l} style={s.breakRow}>
                   <span style={s.breakLabel}>{r.l}</span>
-                  <span style={s.breakVal}>₹{r.v.toLocaleString("en-IN")}</span>
+                  <span style={s.breakVal}>
+                    ₹{r.v.toLocaleString("en-IN")}.00
+                  </span>
                 </div>
               ))}
               <div style={s.breakTotal}>
-                <span>Gross Salary</span>
+                <span>Gross Earnings</span>
                 <span style={{ color: "#10b981" }}>
-                  ₹{sal.grossSalary.toLocaleString("en-IN")}
+                  ₹{sal.grossSalary.toLocaleString("en-IN")}.00
                 </span>
               </div>
             </div>
@@ -590,28 +713,30 @@ export default function Payslips() {
                 📉 Deductions
               </div>
               {[
-                { l: "PF (12%)", v: sal.pf },
-                ...(sal.esi > 0 ? [{ l: "ESI", v: sal.esi }] : []),
-                { l: "Professional Tax", v: sal.professionalTax },
+                { l: "EPF Contribution", v: sal.pf },
+                ...(sal.esi > 0 ? [{ l: "ESI Contribution", v: sal.esi }] : []),
+                ...(sal.professionalTax > 0
+                  ? [{ l: "Professional Tax", v: sal.professionalTax }]
+                  : []),
                 ...(sal.tds > 0 ? [{ l: "TDS", v: sal.tds }] : []),
               ].map((r) => (
                 <div key={r.l} style={s.breakRow}>
                   <span style={s.breakLabel}>{r.l}</span>
                   <span style={{ ...s.breakVal, color: "#ef4444" }}>
-                    ₹{r.v.toLocaleString("en-IN")}
+                    ₹{r.v.toLocaleString("en-IN")}.00
                   </span>
                 </div>
               ))}
               <div style={s.breakTotal}>
                 <span>Total Deductions</span>
                 <span style={{ color: "#ef4444" }}>
-                  ₹{sal.totalDeductions.toLocaleString("en-IN")}
+                  ₹{sal.totalDeductions.toLocaleString("en-IN")}.00
                 </span>
               </div>
             </div>
           </div>
           <div style={s.historyCard}>
-            <div style={s.historyTitle}>📅 Payslip History (Saved Records)</div>
+            <div style={s.historyTitle}>📅 Payslip History</div>
             {payslipHistory.length === 0 ? (
               <div
                 style={{
@@ -621,19 +746,18 @@ export default function Payslips() {
                   fontSize: "13px",
                 }}
               >
-                No saved payslips yet. Admin will generate them monthly.
+                No saved payslips yet.
               </div>
             ) : (
               <div style={s.historyGrid}>
                 {payslipHistory.map((ps) => {
                   const hSal = calcFromHistory(ps);
-                  const empInfo = getEmpInfo(ps.employeeId);
                   return (
                     <div
                       key={ps.id}
                       style={s.historyItem}
                       onClick={() =>
-                        printPayslip(ps, hSal, empInfo, ps.month, ps.year)
+                        printPayslip(ps, hSal, ps.month, ps.year, ps)
                       }
                     >
                       <div style={s.historyMonth}>
@@ -658,7 +782,7 @@ export default function Payslips() {
                           marginTop: "4px",
                         }}
                       >
-                        🖨️ Click to print
+                        🖨️ Print
                       </div>
                     </div>
                   );
@@ -671,7 +795,7 @@ export default function Payslips() {
     );
   }
 
-  // ===== ADMIN / HR MANAGER VIEW =====
+  // ===== ADMIN / HR VIEW =====
   const sal = selectedEmp ? calcSalary(selectedEmp) : null;
 
   return (
@@ -695,7 +819,7 @@ export default function Payslips() {
             </div>
             <div style={s.modalBody}>
               <div style={s.formRow}>
-                <div style={s.formGroup}>
+                <div style={s.fg}>
                   <label style={s.label}>Working Days</label>
                   <input
                     style={s.input}
@@ -709,7 +833,7 @@ export default function Payslips() {
                     }
                   />
                 </div>
-                <div style={s.formGroup}>
+                <div style={s.fg}>
                   <label style={s.label}>Present Days</label>
                   <input
                     style={s.input}
@@ -724,53 +848,23 @@ export default function Payslips() {
                   />
                 </div>
               </div>
-              <div style={s.formGroup}>
-                <label style={s.label}>LOP Days</label>
-                <input
-                  style={s.input}
-                  type="number"
-                  min="0"
-                  value={editModal.lopDays || 0}
-                  onChange={(e) =>
-                    setEditModal({
-                      ...editModal,
-                      lopDays: parseInt(e.target.value) || 0,
-                    })
-                  }
-                />
-              </div>
               <div style={s.formRow}>
-                <div style={s.formGroup}>
-                  <label style={s.label}>Basic Salary</label>
+                <div style={s.fg}>
+                  <label style={s.label}>LOP Days</label>
                   <input
                     style={s.input}
                     type="number"
-                    value={editModal.basicSalary || 0}
+                    min="0"
+                    value={editModal.lopDays || 0}
                     onChange={(e) =>
                       setEditModal({
                         ...editModal,
-                        basicSalary: parseFloat(e.target.value) || 0,
+                        lopDays: parseInt(e.target.value) || 0,
                       })
                     }
                   />
                 </div>
-                <div style={s.formGroup}>
-                  <label style={s.label}>Gross Salary</label>
-                  <input
-                    style={s.input}
-                    type="number"
-                    value={editModal.grossSalary || 0}
-                    onChange={(e) =>
-                      setEditModal({
-                        ...editModal,
-                        grossSalary: parseFloat(e.target.value) || 0,
-                      })
-                    }
-                  />
-                </div>
-              </div>
-              <div style={s.formRow}>
-                <div style={s.formGroup}>
+                <div style={s.fg}>
                   <label style={s.label}>Bonus (₹)</label>
                   <input
                     style={s.input}
@@ -785,68 +879,9 @@ export default function Payslips() {
                     }
                   />
                 </div>
-                <div style={s.formGroup}>
-                  <label style={s.label}>Bonus Reason</label>
-                  <input
-                    style={s.input}
-                    value={editModal.bonusReason || ""}
-                    onChange={(e) =>
-                      setEditModal({
-                        ...editModal,
-                        bonusReason: e.target.value,
-                      })
-                    }
-                    placeholder="e.g. Performance Bonus"
-                  />
-                </div>
               </div>
               <div style={s.formRow}>
-                <div style={s.formGroup}>
-                  <label style={s.label}>Extra Deduction (₹)</label>
-                  <input
-                    style={s.input}
-                    type="number"
-                    min="0"
-                    value={editModal.extraDeduction || 0}
-                    onChange={(e) =>
-                      setEditModal({
-                        ...editModal,
-                        extraDeduction: parseFloat(e.target.value) || 0,
-                      })
-                    }
-                  />
-                </div>
-                <div style={s.formGroup}>
-                  <label style={s.label}>Deduction Reason</label>
-                  <input
-                    style={s.input}
-                    value={editModal.extraDeductionReason || ""}
-                    onChange={(e) =>
-                      setEditModal({
-                        ...editModal,
-                        extraDeductionReason: e.target.value,
-                      })
-                    }
-                    placeholder="e.g. Advance Recovery"
-                  />
-                </div>
-              </div>
-              <div style={s.formRow}>
-                <div style={s.formGroup}>
-                  <label style={s.label}>Total Deductions</label>
-                  <input
-                    style={s.input}
-                    type="number"
-                    value={editModal.totalDeductions || 0}
-                    onChange={(e) =>
-                      setEditModal({
-                        ...editModal,
-                        totalDeductions: parseFloat(e.target.value) || 0,
-                      })
-                    }
-                  />
-                </div>
-                <div style={s.formGroup}>
+                <div style={s.fg}>
                   <label style={s.label}>Net Salary</label>
                   <input
                     style={{ ...s.input, fontWeight: "700", color: "#10b981" }}
@@ -860,61 +895,49 @@ export default function Payslips() {
                     }
                   />
                 </div>
-              </div>
-              <div style={s.formGroup}>
-                <label style={s.label}>Status</label>
-                <select
-                  style={s.input}
-                  value={editModal.status || "Generated"}
-                  onChange={(e) =>
-                    setEditModal({ ...editModal, status: e.target.value })
-                  }
-                >
-                  <option>Generated</option>
-                  <option>Paid</option>
-                  <option>Pending</option>
-                </select>
+                <div style={s.fg}>
+                  <label style={s.label}>Status</label>
+                  <select
+                    style={s.input}
+                    value={editModal.status || "Generated"}
+                    onChange={(e) =>
+                      setEditModal({ ...editModal, status: e.target.value })
+                    }
+                  >
+                    <option>Generated</option>
+                    <option>Paid</option>
+                    <option>Pending</option>
+                  </select>
+                </div>
               </div>
               <div
                 style={{
-                  background: "#fffbeb",
-                  border: "1px solid #fde68a",
-                  borderRadius: "9px",
-                  padding: "10px 14px",
-                  fontSize: "12.5px",
-                  color: "#92400e",
-                  marginBottom: "12px",
+                  display: "flex",
+                  justifyContent: "flex-end",
+                  gap: "10px",
+                  paddingTop: "12px",
+                  borderTop: "1px solid #e5e7f0",
                 }}
               >
-                ⚠️ Manual edits override auto-calculated values. Make sure
-                totals are correct before saving.
-              </div>
-              <div style={s.modalFoot}>
                 <button style={s.cancelBtn} onClick={() => setEditModal(null)}>
                   Cancel
                 </button>
                 <button
-                  style={s.printBtnSm}
-                  onClick={() => {
-                    const sal = calcFromHistory(editModal);
-                    const empInfo = getEmpInfo(editModal.employeeId);
-                    printPayslip(
-                      editModal,
-                      sal,
-                      empInfo,
-                      editModal.month,
-                      editModal.year,
-                    );
+                  style={{
+                    background: "linear-gradient(135deg,#6366f1,#4f46e5)",
+                    color: "#fff",
+                    border: "none",
+                    borderRadius: "9px",
+                    padding: "10px 20px",
+                    fontSize: "13px",
+                    fontWeight: "700",
+                    cursor: "pointer",
+                    fontFamily: "inherit",
                   }}
-                >
-                  🖨️ Print
-                </button>
-                <button
-                  style={s.saveBtn}
                   onClick={handleSaveEdit}
                   disabled={saving}
                 >
-                  {saving ? "Saving..." : "💾 Save Changes"}
+                  {saving ? "Saving..." : "💾 Save"}
                 </button>
               </div>
             </div>
@@ -925,9 +948,7 @@ export default function Payslips() {
       <div style={s.header}>
         <div>
           <div style={s.title}>Payslip Generator 💵</div>
-          <div style={s.sub}>
-            Generate, edit, save and manage employee payslips
-          </div>
+          <div style={s.sub}>Professional payslips matching company format</div>
         </div>
         <div style={s.headerRight}>
           {savedMsg && (
@@ -963,7 +984,7 @@ export default function Payslips() {
               <button
                 style={s.printBtn}
                 onClick={() =>
-                  printPayslip(selectedEmp, sal, selectedEmp, month, year)
+                  printPayslip(selectedEmp, sal, month, year, adjustments)
                 }
               >
                 🖨️ Print PDF
@@ -998,7 +1019,7 @@ export default function Payslips() {
               <div style={s.formCard}>
                 <div style={s.cardTitle}>📅 Pay Period</div>
                 <div style={s.formRow}>
-                  <div style={s.formGroup}>
+                  <div style={s.fg}>
                     <label style={s.label}>Month</label>
                     <select
                       style={s.input}
@@ -1012,7 +1033,7 @@ export default function Payslips() {
                       ))}
                     </select>
                   </div>
-                  <div style={s.formGroup}>
+                  <div style={s.fg}>
                     <label style={s.label}>Year</label>
                     <select
                       style={s.input}
@@ -1028,7 +1049,13 @@ export default function Payslips() {
               </div>
               <div style={s.formCard}>
                 <div style={s.cardTitle}>👤 Select Employee</div>
-                <div style={s.empList}>
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "6px",
+                  }}
+                >
                   {employees.map((emp) => {
                     const es = calcSalary(emp);
                     return (
@@ -1050,7 +1077,7 @@ export default function Payslips() {
                         >
                           {emp.name.charAt(0)}
                         </div>
-                        <div style={s.empInfo}>
+                        <div style={{ flex: 1 }}>
                           <div style={s.empName}>{emp.name}</div>
                           <div style={s.empRole}>
                             {emp.role} · {emp.department || "—"}
@@ -1068,7 +1095,7 @@ export default function Payslips() {
                 <div style={s.formCard}>
                   <div style={s.cardTitle}>⚙️ Adjustments</div>
                   <div style={s.formRow}>
-                    <div style={s.formGroup}>
+                    <div style={s.fg}>
                       <label style={s.label}>Working Days</label>
                       <input
                         style={s.input}
@@ -1082,7 +1109,7 @@ export default function Payslips() {
                         }
                       />
                     </div>
-                    <div style={s.formGroup}>
+                    <div style={s.fg}>
                       <label style={s.label}>Present Days</label>
                       <input
                         style={s.input}
@@ -1097,7 +1124,7 @@ export default function Payslips() {
                       />
                     </div>
                   </div>
-                  <div style={s.formGroup}>
+                  <div style={s.fg}>
                     <label style={s.label}>LOP Days</label>
                     <input
                       style={s.input}
@@ -1113,7 +1140,7 @@ export default function Payslips() {
                     />
                   </div>
                   <div style={s.formRow}>
-                    <div style={s.formGroup}>
+                    <div style={s.fg}>
                       <label style={s.label}>Bonus (₹)</label>
                       <input
                         style={s.input}
@@ -1128,7 +1155,7 @@ export default function Payslips() {
                         }
                       />
                     </div>
-                    <div style={s.formGroup}>
+                    <div style={s.fg}>
                       <label style={s.label}>Bonus Reason</label>
                       <input
                         style={s.input}
@@ -1143,45 +1170,12 @@ export default function Payslips() {
                       />
                     </div>
                   </div>
-                  <div style={s.formRow}>
-                    <div style={s.formGroup}>
-                      <label style={s.label}>Extra Deduction (₹)</label>
-                      <input
-                        style={s.input}
-                        type="number"
-                        min="0"
-                        value={adjustments.extraDeduction}
-                        onChange={(e) =>
-                          setAdjustments({
-                            ...adjustments,
-                            extraDeduction: parseFloat(e.target.value) || 0,
-                          })
-                        }
-                      />
-                    </div>
-                    <div style={s.formGroup}>
-                      <label style={s.label}>Reason</label>
-                      <input
-                        style={s.input}
-                        value={adjustments.extraDeductionReason}
-                        onChange={(e) =>
-                          setAdjustments({
-                            ...adjustments,
-                            extraDeductionReason: e.target.value,
-                          })
-                        }
-                        placeholder="e.g. Advance"
-                      />
-                    </div>
-                  </div>
                   <button
                     style={{ ...s.saveDbBtn, width: "100%", marginTop: "4px" }}
                     onClick={handleSavePayslip}
                     disabled={saving}
                   >
-                    {saving
-                      ? "⏳ Saving..."
-                      : "💾 Save This Payslip to Database"}
+                    {saving ? "⏳ Saving..." : "💾 Save to Database"}
                   </button>
                   {savedMsg && (
                     <div
@@ -1200,6 +1194,7 @@ export default function Payslips() {
               )}
             </div>
 
+            {/* Preview Panel - matches exact format */}
             <div style={s.previewPanel}>
               {!selectedEmp ? (
                 <div style={s.emptyState}>
@@ -1208,190 +1203,289 @@ export default function Payslips() {
                   </div>
                   <div style={s.emptyTitle}>Select an Employee</div>
                   <div style={s.emptySub}>
-                    Choose an employee to preview and save their payslip
+                    Preview payslip in the exact company format
                   </div>
                 </div>
               ) : (
                 sal && (
-                  <div style={s.payslipCard}>
-                    <div style={s.psHeader}>
+                  <div style={s.payslipPreview}>
+                    {/* Payslip Preview matching exact format */}
+                    <div style={s.psCompanyRow}>
                       <div>
-                        <div style={s.psCompany}>
+                        <div style={s.psCompanyName}>
                           TechNext Staffing Pvt. Ltd.
                         </div>
-                        <div style={s.psCompanySub}>
-                          Koramangala, Bengaluru - 560034
+                        <div style={s.psCompanyAddr}>
+                          MSR Novel Office, Koramangala, Bengaluru 560034
                         </div>
-                        <div style={s.psCompanySub}>
-                          info@technextstaffing.in
-                        </div>
-                      </div>
-                      <div style={{ textAlign: "right" }}>
-                        <div style={s.psTitle}>SALARY PAYSLIP</div>
-                        <div style={s.psPeriod}>
-                          {MONTHS[month - 1]} {year}
-                        </div>
-                        <div style={s.psConfidential}>🔒 CONFIDENTIAL</div>
                       </div>
                     </div>
-                    <div style={s.psDivider} />
-                    <div style={s.psEmpGrid}>
-                      <div>
+                    <div style={s.psMonthTitle}>
+                      Payslip for the month of {MONTHS[month - 1]} {year}
+                    </div>
+                    <div style={s.psSumTitle}>Pay Summary</div>
+
+                    <div style={s.psSummaryLayout}>
+                      <div style={{ flex: 1 }}>
                         {[
-                          { l: "Employee Name", v: selectedEmp.name },
                           {
-                            l: "Employee ID",
-                            v:
-                              selectedEmp.employeeId ||
-                              selectedEmp.employee_id ||
-                              "TN00" + selectedEmp.id,
+                            l: "Employee Name",
+                            v: `${selectedEmp.name}, ${selectedEmp.employeeId || selectedEmp.employee_id || "TN00" + selectedEmp.id}`,
                           },
-                          { l: "Designation", v: selectedEmp.role },
+                          { l: "Designation", v: selectedEmp.role || "—" },
                           { l: "Department", v: selectedEmp.department || "—" },
-                        ].map((r) => (
-                          <div key={r.l} style={s.psEmpRow}>
-                            <span style={s.psEmpLabel}>{r.l}</span>
-                            <span style={s.psEmpVal}>{r.v}</span>
-                          </div>
-                        ))}
-                      </div>
-                      <div>
-                        {[
+                          {
+                            l: "Date of Joining",
+                            v:
+                              selectedEmp.joiningDate ||
+                              selectedEmp.joining_date ||
+                              "—",
+                          },
                           {
                             l: "Pay Period",
                             v: `${MONTHS[month - 1]} ${year}`,
                           },
-                          { l: "Working Days", v: adjustments.workingDays },
-                          { l: "Days Present", v: adjustments.presentDays },
-                          { l: "LOP Days", v: adjustments.lopDays },
-                        ].map((r) => (
-                          <div key={r.l} style={s.psEmpRow}>
-                            <span style={s.psEmpLabel}>{r.l}</span>
-                            <span style={s.psEmpVal}>{r.v}</span>
+                          { l: "Pay Date", v: getPayDate(month, year) },
+                          {
+                            l: "PAN",
+                            v:
+                              selectedEmp.panNumber ||
+                              selectedEmp.pan_number ||
+                              "—",
+                          },
+                          {
+                            l: "Bank Account No",
+                            v:
+                              selectedEmp.bankAccount ||
+                              selectedEmp.bank_account ||
+                              "—",
+                          },
+                          {
+                            l: "Work Location",
+                            v:
+                              selectedEmp.workLocation ||
+                              selectedEmp.work_location ||
+                              "Bangalore",
+                          },
+                        ].map((row) => (
+                          <div key={row.l} style={s.psInfoRow}>
+                            <span style={s.psInfoLabel}>{row.l}</span>
+                            <span style={s.psInfoVal}>{row.v}</span>
                           </div>
                         ))}
                       </div>
-                    </div>
-                    <div style={s.psSalaryGrid}>
-                      <div style={s.psSalaryCard}>
-                        <div
-                          style={{
-                            ...s.psSalaryTitle,
-                            background: "#f0fdf4",
-                            color: "#10b981",
-                          }}
-                        >
-                          💰 Earnings
+                      <div style={s.psNetBox}>
+                        <div style={s.psNetBoxLabel}>Total Net Pay</div>
+                        <div style={s.psNetBoxAmt}>
+                          ₹{sal.netSalary.toLocaleString("en-IN")}.00
                         </div>
-                        {[
-                          { l: "Basic Salary", v: sal.basic },
-                          { l: "HRA (40%)", v: sal.hra },
-                          { l: "Transport", v: sal.transport },
-                          { l: "Medical", v: sal.medical },
-                          { l: "Special", v: sal.special },
-                          ...(sal.bonus > 0
-                            ? [
-                                {
-                                  l: adjustments.bonusReason || "Bonus",
-                                  v: sal.bonus,
-                                },
-                              ]
-                            : []),
-                        ].map((r) => (
-                          <div key={r.l} style={s.psRow}>
-                            <span style={s.psRowLabel}>{r.l}</span>
-                            <span style={s.psRowVal}>
-                              ₹{r.v.toLocaleString("en-IN")}
-                            </span>
-                          </div>
-                        ))}
-                        <div style={s.psTotalRow}>
-                          <span>Gross Salary</span>
-                          <span>
-                            ₹{sal.grossSalary.toLocaleString("en-IN")}
-                          </span>
-                        </div>
-                      </div>
-                      <div style={s.psSalaryCard}>
-                        <div
-                          style={{
-                            ...s.psSalaryTitle,
-                            background: "#fef2f2",
-                            color: "#ef4444",
-                          }}
-                        >
-                          📉 Deductions
-                        </div>
-                        {[
-                          { l: "PF (12%)", v: sal.pf },
-                          ...(sal.esi > 0 ? [{ l: "ESI", v: sal.esi }] : []),
-                          { l: "Prof Tax", v: sal.professionalTax },
-                          ...(sal.tds > 0 ? [{ l: "TDS", v: sal.tds }] : []),
-                          ...(sal.lopDeduction > 0
-                            ? [{ l: "LOP", v: sal.lopDeduction }]
-                            : []),
-                          ...(sal.extraDed > 0
-                            ? [
-                                {
-                                  l:
-                                    adjustments.extraDeductionReason || "Other",
-                                  v: sal.extraDed,
-                                },
-                              ]
-                            : []),
-                        ].map((r) => (
-                          <div key={r.l} style={s.psRow}>
-                            <span style={s.psRowLabel}>{r.l}</span>
-                            <span style={{ ...s.psRowVal, color: "#ef4444" }}>
-                              ₹{r.v.toLocaleString("en-IN")}
-                            </span>
-                          </div>
-                        ))}
-                        <div style={s.psTotalRow}>
-                          <span>Total Deductions</span>
-                          <span style={{ color: "#ef4444" }}>
-                            ₹{sal.totalDeductions.toLocaleString("en-IN")}
-                          </span>
+                        <div style={s.psNetBoxDays}>
+                          Paid Days :{" "}
+                          {adjustments.workingDays - adjustments.lopDays} | LOP
+                          Days : {adjustments.lopDays}
                         </div>
                       </div>
                     </div>
-                    <div style={s.psNetSalary}>
+
+                    {/* Earnings & Deductions */}
+                    <div style={s.psTwoCol}>
                       <div>
-                        <div style={s.psNetLabel}>NET SALARY PAYABLE</div>
-                        <div style={s.psNetAmount}>
-                          ₹{sal.netSalary.toLocaleString("en-IN")}
-                        </div>
-                        <div style={s.psNetWords}>
-                          {numberToWords(sal.netSalary)} Rupees Only
-                        </div>
+                        <table style={s.psTable}>
+                          <thead>
+                            <tr>
+                              <th style={s.psTh}>Earnings</th>
+                              <th style={s.psTh}>Amount</th>
+                              <th style={{ ...s.psTh, color: "#aaa" }}>YTD</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {[
+                              { l: "Basic", v: sal.basic },
+                              { l: "House Rent Allowance", v: sal.hra },
+                              { l: "Transport Allowance", v: sal.transport },
+                              { l: "Medical Allowance", v: sal.medical },
+                              { l: "Special Allowance", v: sal.special },
+                              ...(sal.bonus > 0
+                                ? [
+                                    {
+                                      l: adjustments.bonusReason || "Bonus",
+                                      v: sal.bonus,
+                                    },
+                                  ]
+                                : []),
+                            ].map((r) => (
+                              <tr key={r.l}>
+                                <td style={s.psTd}>{r.l}</td>
+                                <td style={{ ...s.psTd, textAlign: "right" }}>
+                                  ₹{r.v.toLocaleString("en-IN")}.00
+                                </td>
+                                <td
+                                  style={{
+                                    ...s.psTd,
+                                    textAlign: "right",
+                                    color: "#aaa",
+                                  }}
+                                >
+                                  ₹{r.v.toLocaleString("en-IN")}.00
+                                </td>
+                              </tr>
+                            ))}
+                            <tr
+                              style={{
+                                background: "#f9f9f9",
+                                fontWeight: "700",
+                              }}
+                            >
+                              <td
+                                style={{
+                                  ...s.psTd,
+                                  borderTop: "1px solid #e0e0e0",
+                                }}
+                              >
+                                Gross Earnings
+                              </td>
+                              <td
+                                style={{
+                                  ...s.psTd,
+                                  textAlign: "right",
+                                  borderTop: "1px solid #e0e0e0",
+                                }}
+                              >
+                                ₹{sal.grossSalary.toLocaleString("en-IN")}.00
+                              </td>
+                              <td
+                                style={{
+                                  ...s.psTd,
+                                  borderTop: "1px solid #e0e0e0",
+                                }}
+                              ></td>
+                            </tr>
+                          </tbody>
+                        </table>
                       </div>
-                      <div style={{ textAlign: "right" }}>
-                        <div style={s.psNetLabel}>Payment Mode</div>
-                        <div
-                          style={{
-                            fontSize: "14px",
-                            fontWeight: "700",
-                            marginTop: "4px",
-                          }}
-                        >
-                          Bank Transfer
-                        </div>
+                      <div>
+                        <table style={s.psTable}>
+                          <thead>
+                            <tr>
+                              <th style={s.psTh}>Deductions</th>
+                              <th style={s.psTh}>Amount</th>
+                              <th style={{ ...s.psTh, color: "#aaa" }}>YTD</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {[
+                              { l: "EPF Contribution", v: sal.pf },
+                              ...(sal.esi > 0
+                                ? [{ l: "ESI Contribution", v: sal.esi }]
+                                : []),
+                              ...(sal.professionalTax > 0
+                                ? [
+                                    {
+                                      l: "Professional Tax",
+                                      v: sal.professionalTax,
+                                    },
+                                  ]
+                                : []),
+                              ...(sal.tds > 0
+                                ? [{ l: "TDS", v: sal.tds }]
+                                : []),
+                            ].map((r) => (
+                              <tr key={r.l}>
+                                <td style={s.psTd}>{r.l}</td>
+                                <td
+                                  style={{
+                                    ...s.psTd,
+                                    textAlign: "right",
+                                    color: "#ef4444",
+                                  }}
+                                >
+                                  ₹{r.v.toLocaleString("en-IN")}.00
+                                </td>
+                                <td
+                                  style={{
+                                    ...s.psTd,
+                                    textAlign: "right",
+                                    color: "#aaa",
+                                  }}
+                                >
+                                  ₹{r.v.toLocaleString("en-IN")}.00
+                                </td>
+                              </tr>
+                            ))}
+                            <tr
+                              style={{
+                                background: "#f9f9f9",
+                                fontWeight: "700",
+                              }}
+                            >
+                              <td
+                                style={{
+                                  ...s.psTd,
+                                  borderTop: "1px solid #e0e0e0",
+                                }}
+                              >
+                                Total Deductions
+                              </td>
+                              <td
+                                style={{
+                                  ...s.psTd,
+                                  textAlign: "right",
+                                  borderTop: "1px solid #e0e0e0",
+                                  color: "#ef4444",
+                                }}
+                              >
+                                ₹{sal.totalDeductions.toLocaleString("en-IN")}
+                                .00
+                              </td>
+                              <td
+                                style={{
+                                  ...s.psTd,
+                                  borderTop: "1px solid #e0e0e0",
+                                }}
+                              ></td>
+                            </tr>
+                          </tbody>
+                        </table>
                       </div>
                     </div>
-                    <div style={s.psSignatures}>
-                      {["Employee Signature", "HR Manager", "Company Seal"].map(
-                        (sig) => (
-                          <div key={sig} style={s.psSig}>
-                            <div style={s.psSigSpace} />
-                            <div style={s.psSigLine}>{sig}</div>
-                          </div>
-                        ),
-                      )}
+
+                    {/* Net Payable Bar */}
+                    <div style={s.psNetBar}>
+                      <span style={{ fontWeight: "700" }}>
+                        | Total Net Payable{" "}
+                        <span style={{ color: "#16a34a" }}>
+                          ₹{sal.netSalary.toLocaleString("en-IN")}.00
+                        </span>
+                      </span>
+                      <span
+                        style={{
+                          fontSize: "12px",
+                          color: "#555",
+                          marginLeft: "8px",
+                        }}
+                      >
+                        ({numberToWords(sal.netSalary)} Only)
+                      </span>
                     </div>
-                    <div style={s.psFooter}>
-                      Computer-generated payslip. Generated on{" "}
-                      {new Date().toLocaleDateString("en-IN")} via TechNext CRM
-                      Portal.
+                    <div
+                      style={{
+                        fontSize: "11px",
+                        color: "#888",
+                        marginBottom: "10px",
+                      }}
+                    >
+                      **Total Net Payable = Gross Earnings - Total Deductions
+                    </div>
+                    <div
+                      style={{
+                        textAlign: "center",
+                        fontSize: "11px",
+                        color: "#aaa",
+                        paddingTop: "10px",
+                        borderTop: "1px solid #f0f0f0",
+                      }}
+                    >
+                      -- This is a system-generated document. --
                     </div>
                   </div>
                 )
@@ -1406,37 +1500,35 @@ export default function Payslips() {
             <div
               style={{
                 display: "flex",
-                alignItems: "center",
-                gap: "12px",
+                gap: "10px",
                 marginBottom: "16px",
                 flexWrap: "wrap",
+                alignItems: "center",
               }}
             >
-              <div style={{ display: "flex", gap: "8px" }}>
-                <select
-                  style={s.periodSelect}
-                  value={month}
-                  onChange={(e) => setMonth(parseInt(e.target.value))}
-                >
-                  {MONTHS.map((m, i) => (
-                    <option key={i} value={i + 1}>
-                      {m}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  style={s.periodSelect}
-                  value={year}
-                  onChange={(e) => setYear(parseInt(e.target.value))}
-                >
-                  {[2024, 2025, 2026, 2027].map((y) => (
-                    <option key={y}>{y}</option>
-                  ))}
-                </select>
-                <button style={s.excelBtn} onClick={fetchAllHistory}>
-                  🔍 Load
-                </button>
-              </div>
+              <select
+                style={s.periodSelect}
+                value={month}
+                onChange={(e) => setMonth(parseInt(e.target.value))}
+              >
+                {MONTHS.map((m, i) => (
+                  <option key={i} value={i + 1}>
+                    {m}
+                  </option>
+                ))}
+              </select>
+              <select
+                style={s.periodSelect}
+                value={year}
+                onChange={(e) => setYear(parseInt(e.target.value))}
+              >
+                {[2024, 2025, 2026, 2027].map((y) => (
+                  <option key={y}>{y}</option>
+                ))}
+              </select>
+              <button style={s.excelBtn} onClick={fetchAllHistory}>
+                🔍 Load
+              </button>
               <button
                 style={s.autoBtn}
                 onClick={handleAutoGenerate}
@@ -1479,15 +1571,6 @@ export default function Payslips() {
                 >
                   No saved payslips for {MONTHS[month - 1]} {year}
                 </div>
-                <div
-                  style={{
-                    fontSize: "13px",
-                    color: "#9ca3af",
-                    marginBottom: "16px",
-                  }}
-                >
-                  Click Auto-Generate All to create payslips for all employees
-                </div>
                 <button style={s.autoBtn} onClick={handleAutoGenerate}>
                   ⚡ Auto-Generate All
                 </button>
@@ -1501,45 +1584,75 @@ export default function Payslips() {
                   overflow: "hidden",
                 }}
               >
-                <table style={s.table}>
+                <table style={{ width: "100%", borderCollapse: "collapse" }}>
                   <thead>
-                    <tr style={s.thead}>
-                      <th style={s.th}>Employee</th>
-                      <th style={s.th}>Period</th>
-                      <th style={s.th}>Gross</th>
-                      <th style={s.th}>Deductions</th>
-                      <th style={s.th}>Net Salary</th>
-                      <th style={s.th}>Status</th>
-                      <th style={s.th}>Generated By</th>
-                      <th style={s.th}>Actions</th>
+                    <tr style={{ background: "#f8f9fc" }}>
+                      {[
+                        "Employee",
+                        "Period",
+                        "Gross",
+                        "Deductions",
+                        "Net Salary",
+                        "Status",
+                        "Generated By",
+                        "Actions",
+                      ].map((h) => (
+                        <th
+                          key={h}
+                          style={{
+                            padding: "11px 14px",
+                            fontSize: "10.5px",
+                            color: "#9ca3af",
+                            fontWeight: "700",
+                            textAlign: "left",
+                            borderBottom: "1px solid #e5e7f0",
+                            textTransform: "uppercase",
+                            letterSpacing: "0.8px",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {h}
+                        </th>
+                      ))}
                     </tr>
                   </thead>
                   <tbody>
                     {payslipHistory.map((ps) => {
                       const hSal = calcFromHistory(ps);
-                      const empInfo = getEmpInfo(ps.employeeId);
+                      const empInfo =
+                        employees.find((e) => e.id === ps.employeeId) || {};
                       return (
-                        <tr key={ps.id} style={s.trow}>
-                          <td style={s.td}>
+                        <tr
+                          key={ps.id}
+                          style={{ borderBottom: "1px solid #f1f3f9" }}
+                        >
+                          <td style={{ padding: "12px 14px" }}>
                             <div
                               style={{ fontWeight: "600", color: "#0f1117" }}
                             >
                               {ps.employeeName}
                             </div>
-                            <div style={{ fontSize: "11px", color: "#9ca3af" }}>
-                              ID: {ps.employeeId}
-                            </div>
                           </td>
-                          <td style={s.td}>
+                          <td
+                            style={{ padding: "12px 14px", fontSize: "13px" }}
+                          >
                             {MONTHS[(ps.month || 1) - 1]} {ps.year}
                           </td>
-                          <td style={s.td}>
+                          <td
+                            style={{ padding: "12px 14px", fontSize: "13px" }}
+                          >
                             ₹
                             {Number(ps.grossSalary || 0).toLocaleString(
                               "en-IN",
                             )}
                           </td>
-                          <td style={{ ...s.td, color: "#ef4444" }}>
+                          <td
+                            style={{
+                              padding: "12px 14px",
+                              fontSize: "13px",
+                              color: "#ef4444",
+                            }}
+                          >
                             ₹
                             {Number(ps.totalDeductions || 0).toLocaleString(
                               "en-IN",
@@ -1547,7 +1660,7 @@ export default function Payslips() {
                           </td>
                           <td
                             style={{
-                              ...s.td,
+                              padding: "12px 14px",
                               fontWeight: "800",
                               color: "#10b981",
                               fontSize: "14px",
@@ -1555,12 +1668,19 @@ export default function Payslips() {
                           >
                             ₹{Number(ps.netSalary || 0).toLocaleString("en-IN")}
                           </td>
-                          <td style={s.td}>
+                          <td style={{ padding: "12px 14px" }}>
                             <select
                               style={{
-                                ...s.periodSelect,
-                                fontSize: "12px",
+                                background: getStatusStyle(ps.status).bg,
+                                color: getStatusStyle(ps.status).color,
+                                border: "none",
+                                borderRadius: "6px",
                                 padding: "4px 8px",
+                                fontSize: "11.5px",
+                                fontWeight: "700",
+                                cursor: "pointer",
+                                fontFamily: "inherit",
+                                outline: "none",
                               }}
                               value={ps.status}
                               onChange={(e) =>
@@ -1572,30 +1692,50 @@ export default function Payslips() {
                               <option>Pending</option>
                             </select>
                           </td>
-                          <td style={s.td}>
-                            <div
-                              style={{ fontSize: "11.5px", color: "#6b7280" }}
-                            >
-                              {ps.generatedBy || "System"}
-                            </div>
+                          <td
+                            style={{
+                              padding: "12px 14px",
+                              fontSize: "11.5px",
+                              color: "#6b7280",
+                            }}
+                          >
+                            {ps.generatedBy || "System"}
                           </td>
-                          <td style={s.td}>
+                          <td style={{ padding: "12px 14px" }}>
                             <div style={{ display: "flex", gap: "6px" }}>
                               <button
-                                style={s.generateBtn}
+                                style={{
+                                  background: "#eef2ff",
+                                  color: "#6366f1",
+                                  border: "none",
+                                  borderRadius: "7px",
+                                  padding: "5px 10px",
+                                  fontSize: "12px",
+                                  fontWeight: "700",
+                                  cursor: "pointer",
+                                }}
                                 onClick={() => setEditModal({ ...ps })}
                               >
                                 ✏️ Edit
                               </button>
                               <button
-                                style={s.downloadBtn}
+                                style={{
+                                  background: "#f0fdf4",
+                                  color: "#10b981",
+                                  border: "none",
+                                  borderRadius: "7px",
+                                  padding: "5px 10px",
+                                  fontSize: "12px",
+                                  fontWeight: "700",
+                                  cursor: "pointer",
+                                }}
                                 onClick={() =>
                                   printPayslip(
-                                    ps,
+                                    { ...ps, ...empInfo },
                                     hSal,
-                                    empInfo,
                                     ps.month,
                                     ps.year,
+                                    ps,
                                   )
                                 }
                               >
@@ -1613,28 +1753,57 @@ export default function Payslips() {
           </div>
         )}
 
-        {/* All Employees Tab */}
+        {/* All Employees */}
         {activeTab === "all" && (
-          <div style={s.tableWrap}>
-            <table style={s.table}>
+          <div
+            style={{
+              background: "#fff",
+              margin: "16px",
+              borderRadius: "12px",
+              border: "1px solid #e5e7f0",
+              overflow: "hidden",
+            }}
+          >
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
-                <tr style={s.thead}>
-                  <th style={s.th}>Employee</th>
-                  <th style={s.th}>ID</th>
-                  <th style={s.th}>Dept</th>
-                  <th style={s.th}>Basic</th>
-                  <th style={s.th}>Gross</th>
-                  <th style={s.th}>Deductions</th>
-                  <th style={s.th}>Net Salary</th>
-                  <th style={s.th}>Actions</th>
+                <tr style={{ background: "#f8f9fc" }}>
+                  {[
+                    "Employee",
+                    "ID",
+                    "Dept",
+                    "Basic",
+                    "Gross",
+                    "Deductions",
+                    "Net Salary",
+                    "Actions",
+                  ].map((h) => (
+                    <th
+                      key={h}
+                      style={{
+                        padding: "11px 14px",
+                        fontSize: "10.5px",
+                        color: "#9ca3af",
+                        fontWeight: "700",
+                        textAlign: "left",
+                        borderBottom: "1px solid #e5e7f0",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.8px",
+                      }}
+                    >
+                      {h}
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
                 {employees.map((emp) => {
                   const es = calcSalary(emp);
                   return (
-                    <tr key={emp.id} style={s.trow}>
-                      <td style={s.td}>
+                    <tr
+                      key={emp.id}
+                      style={{ borderBottom: "1px solid #f1f3f9" }}
+                    >
+                      <td style={{ padding: "12px 14px" }}>
                         <div
                           style={{
                             display: "flex",
@@ -1644,11 +1813,16 @@ export default function Payslips() {
                         >
                           <div
                             style={{
-                              ...s.empAvatar,
-                              background: avatarColors[emp.role] || "#6366f1",
                               width: "32px",
                               height: "32px",
+                              borderRadius: "9px",
+                              background: avatarColors[emp.role] || "#6366f1",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
                               fontSize: "12px",
+                              fontWeight: "700",
+                              color: "#fff",
                             }}
                           >
                             {emp.name.charAt(0)}
@@ -1669,20 +1843,30 @@ export default function Payslips() {
                           </div>
                         </div>
                       </td>
-                      <td style={s.td}>
+                      <td style={{ padding: "12px 14px", fontSize: "13px" }}>
                         {emp.employeeId || emp.employee_id || "TN00" + emp.id}
                       </td>
-                      <td style={s.td}>{emp.department || "—"}</td>
-                      <td style={s.td}>₹{es.basic.toLocaleString("en-IN")}</td>
-                      <td style={s.td}>
+                      <td style={{ padding: "12px 14px", fontSize: "13px" }}>
+                        {emp.department || "—"}
+                      </td>
+                      <td style={{ padding: "12px 14px", fontSize: "13px" }}>
+                        ₹{es.basic.toLocaleString("en-IN")}
+                      </td>
+                      <td style={{ padding: "12px 14px", fontSize: "13px" }}>
                         ₹{es.grossSalary.toLocaleString("en-IN")}
                       </td>
-                      <td style={{ ...s.td, color: "#ef4444" }}>
+                      <td
+                        style={{
+                          padding: "12px 14px",
+                          fontSize: "13px",
+                          color: "#ef4444",
+                        }}
+                      >
                         ₹{es.totalDeductions.toLocaleString("en-IN")}
                       </td>
                       <td
                         style={{
-                          ...s.td,
+                          padding: "12px 14px",
                           fontWeight: "800",
                           color: "#10b981",
                           fontSize: "14px",
@@ -1690,10 +1874,19 @@ export default function Payslips() {
                       >
                         ₹{es.netSalary.toLocaleString("en-IN")}
                       </td>
-                      <td style={s.td}>
+                      <td style={{ padding: "12px 14px" }}>
                         <div style={{ display: "flex", gap: "6px" }}>
                           <button
-                            style={s.generateBtn}
+                            style={{
+                              background: "#eef2ff",
+                              color: "#6366f1",
+                              border: "none",
+                              borderRadius: "7px",
+                              padding: "5px 10px",
+                              fontSize: "12px",
+                              fontWeight: "700",
+                              cursor: "pointer",
+                            }}
                             onClick={() => {
                               setSelectedEmp(emp);
                               setActiveTab("generate");
@@ -1702,12 +1895,25 @@ export default function Payslips() {
                             Generate
                           </button>
                           <button
-                            style={s.downloadBtn}
+                            style={{
+                              background: "#f0fdf4",
+                              color: "#10b981",
+                              border: "none",
+                              borderRadius: "7px",
+                              padding: "5px 10px",
+                              fontSize: "12px",
+                              fontWeight: "700",
+                              cursor: "pointer",
+                            }}
                             onClick={() =>
-                              printPayslip(emp, es, emp, month, year)
+                              printPayslip(emp, calcSalary(emp), month, year, {
+                                workingDays: 26,
+                                presentDays: 26,
+                                lopDays: 0,
+                              })
                             }
                           >
-                            Print
+                            🖨️ Print
                           </button>
                         </div>
                       </td>
@@ -1719,51 +1925,101 @@ export default function Payslips() {
           </div>
         )}
 
-        {/* Summary Tab */}
+        {/* Summary */}
         {activeTab === "summary" && (
-          <div style={s.summaryWrap}>
-            <div style={s.summaryGrid}>
-              <div style={{ ...s.summaryCard, borderTop: "3px solid #6366f1" }}>
-                <div style={s.summaryIcon}>👥</div>
-                <div style={s.summaryVal}>{employees.length}</div>
-                <div style={s.summaryLabel}>Total Employees</div>
-              </div>
-              <div style={{ ...s.summaryCard, borderTop: "3px solid #10b981" }}>
-                <div style={s.summaryIcon}>💰</div>
-                <div style={s.summaryVal}>
-                  ₹{(totalPayroll / 100000).toFixed(1)}L
+          <div
+            style={{
+              padding: "20px",
+              display: "flex",
+              flexDirection: "column",
+              gap: "16px",
+            }}
+          >
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(4,1fr)",
+                gap: "14px",
+              }}
+            >
+              {[
+                {
+                  icon: "👥",
+                  label: "Total Employees",
+                  val: employees.length,
+                  color: "#6366f1",
+                },
+                {
+                  icon: "💰",
+                  label: "Total Net Payroll",
+                  val: `₹${(totalPayroll / 100000).toFixed(1)}L`,
+                  color: "#10b981",
+                },
+                {
+                  icon: "📊",
+                  label: "Average Salary",
+                  val: `₹${employees.length > 0 ? Math.round(totalPayroll / employees.length).toLocaleString("en-IN") : "0"}`,
+                  color: "#f59e0b",
+                },
+                {
+                  icon: "📉",
+                  label: "Total Deductions",
+                  val: `₹${(employees.reduce((s, e) => s + calcSalary(e).totalDeductions, 0) / 100000).toFixed(1)}L`,
+                  color: "#ef4444",
+                },
+              ].map((c) => (
+                <div
+                  key={c.label}
+                  style={{
+                    background: "#fff",
+                    borderRadius: "12px",
+                    border: "1px solid #e5e7f0",
+                    padding: "20px",
+                    textAlign: "center",
+                    boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
+                  }}
+                >
+                  <div style={{ fontSize: "28px", marginBottom: "10px" }}>
+                    {c.icon}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: "24px",
+                      fontWeight: "800",
+                      color: c.color,
+                      letterSpacing: "-1px",
+                    }}
+                  >
+                    {c.val}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: "12px",
+                      color: "#6b7280",
+                      marginTop: "4px",
+                    }}
+                  >
+                    {c.label}
+                  </div>
                 </div>
-                <div style={s.summaryLabel}>Total Net Payroll</div>
-              </div>
-              <div style={{ ...s.summaryCard, borderTop: "3px solid #f59e0b" }}>
-                <div style={s.summaryIcon}>📊</div>
-                <div style={s.summaryVal}>
-                  ₹
-                  {employees.length > 0
-                    ? Math.round(
-                        totalPayroll / employees.length,
-                      ).toLocaleString("en-IN")
-                    : "0"}
-                </div>
-                <div style={s.summaryLabel}>Average Salary</div>
-              </div>
-              <div style={{ ...s.summaryCard, borderTop: "3px solid #ef4444" }}>
-                <div style={s.summaryIcon}>📉</div>
-                <div style={s.summaryVal}>
-                  ₹
-                  {(
-                    employees.reduce(
-                      (sum, emp) => sum + calcSalary(emp).totalDeductions,
-                      0,
-                    ) / 100000
-                  ).toFixed(1)}
-                  L
-                </div>
-                <div style={s.summaryLabel}>Total Deductions</div>
-              </div>
+              ))}
             </div>
-            <div style={s.deptCard}>
-              <div style={s.cardTitle}>
+            <div
+              style={{
+                background: "#fff",
+                borderRadius: "12px",
+                border: "1px solid #e5e7f0",
+                padding: "20px",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "14px",
+                  fontWeight: "700",
+                  color: "#0f1117",
+                  marginBottom: "14px",
+                }}
+              >
                 Department-wise — {MONTHS[month - 1]} {year}
               </div>
               {["Management", "Recruitment", "Sales", "HR", "Operations"].map(
@@ -1771,11 +2027,19 @@ export default function Payslips() {
                   const de = employees.filter((e) => e.department === dept);
                   if (!de.length) return null;
                   const dt = de.reduce(
-                    (sum, emp) => sum + calcSalary(emp).netSalary,
+                    (s, e) => s + calcSalary(e).netSalary,
                     0,
                   );
                   return (
-                    <div key={dept} style={s.deptRow}>
+                    <div
+                      key={dept}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        padding: "12px 0",
+                        borderBottom: "1px solid #f1f3f9",
+                      }}
+                    >
                       <div style={{ flex: 1 }}>
                         <div
                           style={{
@@ -1889,17 +2153,6 @@ const s = {
     cursor: "pointer",
     boxShadow: "0 4px 12px rgba(99,102,241,0.3)",
   },
-  printBtnSm: {
-    background: "#f8f9fc",
-    border: "1px solid #e5e7f0",
-    color: "#6b7280",
-    borderRadius: "9px",
-    padding: "10px 16px",
-    fontSize: "13px",
-    fontWeight: "600",
-    cursor: "pointer",
-    fontFamily: "inherit",
-  },
   tabs: {
     display: "flex",
     gap: "4px",
@@ -1922,10 +2175,10 @@ const s = {
   body: { flex: 1, overflowY: "auto" },
   generateLayout: { display: "flex", height: "100%" },
   formPanel: {
-    width: "340px",
-    minWidth: "340px",
+    width: "320px",
+    minWidth: "320px",
     overflowY: "auto",
-    padding: "16px",
+    padding: "14px",
     borderRight: "1px solid #e5e7f0",
     background: "#fff",
   },
@@ -1933,50 +2186,49 @@ const s = {
     background: "#f8f9fc",
     borderRadius: "12px",
     border: "1px solid #e5e7f0",
-    padding: "16px",
-    marginBottom: "14px",
+    padding: "14px",
+    marginBottom: "12px",
   },
   cardTitle: {
     fontSize: "13px",
     fontWeight: "700",
     color: "#0f1117",
-    marginBottom: "14px",
+    marginBottom: "12px",
   },
-  empList: { display: "flex", flexDirection: "column", gap: "6px" },
   empItem: {
     display: "flex",
     alignItems: "center",
     gap: "10px",
-    padding: "10px 12px",
-    borderRadius: "10px",
+    padding: "9px 10px",
+    borderRadius: "9px",
     cursor: "pointer",
     border: "1.5px solid #e5e7f0",
     background: "#fff",
+    marginBottom: "4px",
   },
   empItemActive: { border: "1.5px solid #6366f1", background: "#eef2ff" },
   empAvatar: {
-    width: "36px",
-    height: "36px",
-    borderRadius: "10px",
+    width: "32px",
+    height: "32px",
+    borderRadius: "9px",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    fontSize: "14px",
+    fontSize: "13px",
     fontWeight: "700",
     color: "#fff",
     flexShrink: 0,
   },
-  empInfo: { flex: 1 },
-  empName: { fontSize: "13px", fontWeight: "700", color: "#0f1117" },
-  empRole: { fontSize: "11px", color: "#9ca3af", marginTop: "1px" },
-  empSalary: { fontSize: "13px", fontWeight: "800", color: "#10b981" },
+  empName: { fontSize: "12.5px", fontWeight: "700", color: "#0f1117" },
+  empRole: { fontSize: "10.5px", color: "#9ca3af", marginTop: "1px" },
+  empSalary: { fontSize: "12px", fontWeight: "800", color: "#10b981" },
   formRow: {
     display: "grid",
     gridTemplateColumns: "1fr 1fr",
     gap: "12px",
     marginBottom: "12px",
   },
-  formGroup: {
+  fg: {
     display: "flex",
     flexDirection: "column",
     gap: "5px",
@@ -2005,7 +2257,7 @@ const s = {
     flex: 1,
     overflowY: "auto",
     padding: "20px",
-    background: "#f8f9fc",
+    background: "#f0f0f0",
   },
   emptyState: {
     display: "flex",
@@ -2017,233 +2269,103 @@ const s = {
   },
   emptyTitle: { fontSize: "18px", fontWeight: "700", color: "#0f1117" },
   emptySub: { fontSize: "13px", color: "#9ca3af", textAlign: "center" },
-  payslipCard: {
+  // Exact payslip preview styles
+  payslipPreview: {
     background: "#fff",
-    borderRadius: "14px",
-    border: "1px solid #e5e7f0",
-    padding: "28px",
     maxWidth: "720px",
     margin: "0 auto",
-    boxShadow: "0 4px 24px rgba(0,0,0,0.06)",
+    padding: "28px 32px",
+    boxShadow: "0 4px 24px rgba(0,0,0,0.1)",
+    borderRadius: "4px",
+    fontFamily: "'Inter',Arial,sans-serif",
   },
-  psHeader: {
+  psCompanyRow: {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "flex-start",
+    paddingBottom: "14px",
+    borderBottom: "1px solid #e0e0e0",
     marginBottom: "16px",
   },
-  psCompany: { fontSize: "20px", fontWeight: "800", color: "#6366f1" },
-  psCompanySub: { fontSize: "11.5px", color: "#6b7280", marginTop: "3px" },
-  psTitle: {
-    fontSize: "20px",
-    fontWeight: "900",
-    color: "#0f1117",
-    textAlign: "right",
-  },
-  psPeriod: {
-    fontSize: "13px",
-    color: "#6b7280",
-    textAlign: "right",
-    marginTop: "3px",
-  },
-  psConfidential: {
-    fontSize: "10px",
-    color: "#ef4444",
-    fontWeight: "700",
-    textAlign: "right",
-    marginTop: "3px",
-  },
-  psDivider: {
-    height: "3px",
-    background: "linear-gradient(90deg,#6366f1,#4f46e5)",
-    borderRadius: "2px",
-    marginBottom: "18px",
-  },
-  psEmpGrid: {
-    display: "grid",
-    gridTemplateColumns: "1fr 1fr",
-    gap: "20px",
-    background: "#f8f9fc",
-    padding: "14px",
-    borderRadius: "10px",
-    marginBottom: "18px",
-    border: "1px solid #e5e7f0",
-  },
-  psEmpRow: { display: "flex", gap: "10px", marginBottom: "8px" },
-  psEmpLabel: {
+  psCompanyName: { fontSize: "16px", fontWeight: "700", color: "#1a1a1a" },
+  psCompanyAddr: {
     fontSize: "11px",
-    color: "#9ca3af",
-    fontWeight: "600",
-    minWidth: "110px",
+    color: "#888",
+    marginTop: "3px",
+    lineHeight: "1.5",
   },
-  psEmpVal: { fontSize: "12.5px", fontWeight: "700", color: "#0f1117" },
-  psSalaryGrid: {
+  psMonthTitle: {
+    fontSize: "13px",
+    fontWeight: "600",
+    color: "#333",
+    marginBottom: "10px",
+  },
+  psSumTitle: {
+    fontSize: "13px",
+    fontWeight: "700",
+    color: "#1a1a1a",
+    marginBottom: "10px",
+  },
+  psSummaryLayout: { display: "flex", gap: "16px", marginBottom: "20px" },
+  psInfoRow: { display: "flex", marginBottom: "6px" },
+  psInfoLabel: {
+    width: "130px",
+    fontSize: "11px",
+    color: "#888",
+    flexShrink: 0,
+  },
+  psInfoVal: { fontSize: "11px", color: "#1a1a1a", fontWeight: "600" },
+  psNetBox: {
+    width: "200px",
+    border: "1px solid #e0e0e0",
+    borderRadius: "6px",
+    padding: "14px",
+    textAlign: "center",
+    flexShrink: 0,
+  },
+  psNetBoxLabel: { fontSize: "11px", color: "#888", marginBottom: "6px" },
+  psNetBoxAmt: {
+    fontSize: "22px",
+    fontWeight: "800",
+    color: "#2563eb",
+    marginBottom: "6px",
+  },
+  psNetBoxDays: { fontSize: "10.5px", color: "#666" },
+  psTwoCol: {
     display: "grid",
     gridTemplateColumns: "1fr 1fr",
     gap: "14px",
-    marginBottom: "16px",
-  },
-  psSalaryCard: {
-    border: "1px solid #e5e7f0",
-    borderRadius: "10px",
-    overflow: "hidden",
-  },
-  psSalaryTitle: {
-    padding: "10px 14px",
-    fontSize: "11px",
-    fontWeight: "700",
-    textTransform: "uppercase",
-    letterSpacing: "0.8px",
-  },
-  psRow: {
-    display: "flex",
-    justifyContent: "space-between",
-    padding: "7px 14px",
-    borderBottom: "1px solid #f8fafc",
-  },
-  psRowLabel: { fontSize: "12px", color: "#6b7280" },
-  psRowVal: { fontSize: "12px", fontWeight: "600", color: "#0f1117" },
-  psTotalRow: {
-    display: "flex",
-    justifyContent: "space-between",
-    padding: "10px 14px",
-    background: "#f8f9fc",
-    borderTop: "2px solid #e5e7f0",
-    fontSize: "13px",
-    fontWeight: "800",
-    color: "#0f1117",
-  },
-  psNetSalary: {
-    background: "linear-gradient(135deg,#6366f1,#4f46e5)",
-    color: "#fff",
-    borderRadius: "12px",
-    padding: "18px 22px",
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: "18px",
-  },
-  psNetLabel: {
-    fontSize: "11px",
-    fontWeight: "600",
-    opacity: 0.8,
-    textTransform: "uppercase",
-    letterSpacing: "0.5px",
-  },
-  psNetAmount: {
-    fontSize: "28px",
-    fontWeight: "900",
-    letterSpacing: "-1px",
-    marginTop: "4px",
-  },
-  psNetWords: { fontSize: "11px", opacity: 0.7, marginTop: "3px" },
-  psSignatures: {
-    display: "grid",
-    gridTemplateColumns: "1fr 1fr 1fr",
-    gap: "20px",
-    borderTop: "1px solid #e5e7f0",
-    paddingTop: "18px",
     marginBottom: "14px",
   },
-  psSig: { textAlign: "center" },
-  psSigSpace: { height: "40px" },
-  psSigLine: {
-    borderTop: "1px solid #374151",
-    paddingTop: "6px",
-    fontSize: "11px",
-    color: "#6b7280",
-  },
-  psFooter: {
-    textAlign: "center",
-    fontSize: "10.5px",
-    color: "#9ca3af",
-    borderTop: "1px solid #f1f3f9",
-    paddingTop: "12px",
-  },
-  tableWrap: {
-    background: "#fff",
-    margin: "16px",
-    borderRadius: "12px",
-    border: "1px solid #e5e7f0",
+  psTable: {
+    width: "100%",
+    borderCollapse: "collapse",
+    border: "1px solid #e0e0e0",
+    borderRadius: "6px",
     overflow: "hidden",
   },
-  table: { width: "100%", borderCollapse: "collapse" },
-  thead: { background: "#f8f9fc" },
-  th: {
-    padding: "11px 16px",
-    fontSize: "10.5px",
-    color: "#9ca3af",
-    fontWeight: "700",
+  psTh: {
+    background: "#f5f5f5",
+    padding: "8px 10px",
     textAlign: "left",
-    borderBottom: "1px solid #e5e7f0",
-    textTransform: "uppercase",
-    letterSpacing: "0.8px",
-  },
-  trow: { borderBottom: "1px solid #f1f3f9" },
-  td: { padding: "12px 16px", fontSize: "13px", color: "#374151" },
-  generateBtn: {
-    background: "#eef2ff",
-    color: "#6366f1",
-    border: "none",
-    borderRadius: "7px",
-    padding: "6px 12px",
-    fontSize: "12px",
+    fontSize: "11px",
     fontWeight: "700",
-    cursor: "pointer",
+    color: "#333",
+    borderBottom: "1px solid #e0e0e0",
   },
-  downloadBtn: {
+  psTd: {
+    padding: "7px 10px",
+    fontSize: "11.5px",
+    color: "#333",
+    borderBottom: "1px solid #f0f0f0",
+  },
+  psNetBar: {
     background: "#f0fdf4",
-    color: "#10b981",
-    border: "none",
-    borderRadius: "7px",
-    padding: "6px 12px",
-    fontSize: "12px",
-    fontWeight: "700",
-    cursor: "pointer",
-  },
-  summaryWrap: {
-    padding: "20px",
-    display: "flex",
-    flexDirection: "column",
-    gap: "16px",
-  },
-  summaryGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(4,1fr)",
-    gap: "14px",
-  },
-  summaryCard: {
-    background: "#fff",
-    borderRadius: "12px",
-    border: "1px solid #e5e7f0",
-    padding: "20px",
-    textAlign: "center",
-    boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
-  },
-  summaryIcon: { fontSize: "28px", marginBottom: "10px" },
-  summaryVal: {
-    fontSize: "24px",
-    fontWeight: "800",
-    color: "#0f1117",
-    letterSpacing: "-1px",
-  },
-  summaryLabel: {
-    fontSize: "12px",
-    color: "#6b7280",
-    marginTop: "4px",
-    fontWeight: "500",
-  },
-  deptCard: {
-    background: "#fff",
-    borderRadius: "12px",
-    border: "1px solid #e5e7f0",
-    padding: "20px",
-  },
-  deptRow: {
-    display: "flex",
-    alignItems: "center",
-    padding: "12px 0",
-    borderBottom: "1px solid #f1f3f9",
+    borderLeft: "4px solid #22c55e",
+    padding: "12px 14px",
+    borderRadius: "0 6px 6px 0",
+    marginBottom: "8px",
+    fontSize: "13px",
   },
   // Employee self view
   empViewBody: {
@@ -2306,7 +2428,7 @@ const s = {
     letterSpacing: "0.5px",
   },
   netBannerAmount: {
-    fontSize: "36px",
+    fontSize: "32px",
     fontWeight: "900",
     letterSpacing: "-2px",
     marginTop: "4px",
@@ -2393,7 +2515,7 @@ const s = {
     borderRadius: "20px",
     display: "inline-block",
   },
-  // Edit Modal
+  // Modal
   overlay: {
     position: "fixed",
     inset: 0,
@@ -2407,7 +2529,7 @@ const s = {
   modal: {
     background: "#fff",
     borderRadius: "16px",
-    width: "560px",
+    width: "520px",
     maxHeight: "92vh",
     overflowY: "auto",
     boxShadow: "0 32px 80px rgba(0,0,0,0.2)",
@@ -2436,14 +2558,6 @@ const s = {
     color: "#6b7280",
   },
   modalBody: { padding: "24px" },
-  modalFoot: {
-    display: "flex",
-    justifyContent: "flex-end",
-    gap: "10px",
-    paddingTop: "12px",
-    borderTop: "1px solid #e5e7f0",
-    marginTop: "8px",
-  },
   cancelBtn: {
     background: "#fff",
     color: "#6b7280",
@@ -2454,17 +2568,5 @@ const s = {
     fontWeight: "600",
     cursor: "pointer",
     fontFamily: "inherit",
-  },
-  saveBtn: {
-    background: "linear-gradient(135deg,#6366f1,#4f46e5)",
-    color: "#fff",
-    border: "none",
-    borderRadius: "9px",
-    padding: "10px 20px",
-    fontSize: "13px",
-    fontWeight: "700",
-    cursor: "pointer",
-    fontFamily: "inherit",
-    boxShadow: "0 4px 12px rgba(99,102,241,0.3)",
   },
 };

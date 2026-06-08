@@ -3,9 +3,10 @@ import logo from "../logo.jpg";
 
 function Sidebar({ user, activePage, onNavigate, onLogout }) {
   const [salesOpen, setSalesOpen] = useState(true);
-  const [activitiesOpen, setActivitiesOpen] = useState(true);
+  const [recruitOpen, setRecruitOpen] = useState(true);
   const [toolsOpen, setToolsOpen] = useState(true);
   const [insightsOpen, setInsightsOpen] = useState(true);
+  const [hrOpen, setHrOpen] = useState(true);
   const [searchVal, setSearchVal] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
 
@@ -33,6 +34,8 @@ function Sidebar({ user, activePage, onNavigate, onLogout }) {
           "payslips",
           "interviews",
           "chat",
+          "leaves",
+          "attendance",
         ].includes(module);
       case "Sales":
         return [
@@ -50,6 +53,8 @@ function Sidebar({ user, activePage, onNavigate, onLogout }) {
           "notes",
           "payslips",
           "chat",
+          "leaves",
+          "attendance",
         ].includes(module);
       case "HR Manager":
         return [
@@ -68,6 +73,9 @@ function Sidebar({ user, activePage, onNavigate, onLogout }) {
           "payslips",
           "interviews",
           "chat",
+          "leaves",
+          "attendance",
+          "employees",
         ].includes(module);
       case "Staff":
         return [
@@ -78,6 +86,8 @@ function Sidebar({ user, activePage, onNavigate, onLogout }) {
           "notes",
           "payslips",
           "chat",
+          "leaves",
+          "attendance",
         ].includes(module);
       default:
         return false;
@@ -90,25 +100,24 @@ function Sidebar({ user, activePage, onNavigate, onLogout }) {
     { id: "contacts", label: "Contacts", icon: "📇" },
     { id: "accounts", label: "Accounts", icon: "🏢" },
     { id: "deals", label: "Deals", icon: "🤝" },
-    { id: "forecasts", label: "Forecasts", icon: "🎯" },
-    { id: "documents", label: "Documents", icon: "📄" },
-    { id: "campaigns", label: "Campaigns", icon: "📢" },
     { id: "jobs", label: "Job Orders", icon: "📋" },
     { id: "candidates", label: "Candidates", icon: "🪪" },
     { id: "placements", label: "Placements", icon: "🏆" },
+    { id: "interviews", label: "Interviews", icon: "🎤" },
     { id: "tasks", label: "Tasks", icon: "✅" },
     { id: "meetings", label: "Meetings", icon: "📅" },
     { id: "calls", label: "Calls", icon: "📞" },
     { id: "reports", label: "Reports", icon: "📊" },
     { id: "analytics", label: "Analytics", icon: "📈" },
-    { id: "workqueue", label: "Workqueue", icon: "⚡" },
     { id: "calendar", label: "Calendar", icon: "🗓️" },
     { id: "invoice", label: "Invoice", icon: "🧾" },
     { id: "goals", label: "Goals", icon: "🎯" },
     { id: "notes", label: "Notes", icon: "📝" },
     { id: "payslips", label: "Payslips", icon: "💵" },
-    { id: "interviews", label: "Interviews", icon: "🎤" },
+    { id: "leaves", label: "Leave Management", icon: "🌴" },
+    { id: "attendance", label: "Attendance", icon: "⏰" },
     { id: "chat", label: "Chat", icon: "💬" },
+    { id: "employees", label: "Employees", icon: "👥" },
   ].filter((m) => canAccess(m.id));
 
   const suggestions = searchVal.trim()
@@ -144,6 +153,8 @@ function Sidebar({ user, activePage, onNavigate, onLogout }) {
       payslips: "💵",
       interviews: "🎤",
       chat: "💬",
+      leaves: "🌴",
+      attendance: "⏰",
     };
     return icons[id] || "📌";
   };
@@ -306,15 +317,9 @@ function Sidebar({ user, activePage, onNavigate, onLogout }) {
           {canAccess("chat") && <MenuItem id="chat" label="Team Chat" />}
         </div>
 
-        {[
-          "leads",
-          "contacts",
-          "accounts",
-          "deals",
-          "forecasts",
-          "documents",
-          "campaigns",
-        ].some((m) => canAccess(m)) && (
+        {["leads", "contacts", "accounts", "deals"].some((m) =>
+          canAccess(m),
+        ) && (
           <div style={s.navSection}>
             <SectionHeader
               label="SALES"
@@ -327,15 +332,6 @@ function Sidebar({ user, activePage, onNavigate, onLogout }) {
                 <MenuItem id="contacts" label="Contacts" />
                 <MenuItem id="accounts" label="Accounts" />
                 <MenuItem id="deals" label="Deals" />
-                {canAccess("forecasts") && (
-                  <MenuItem id="forecasts" label="Forecasts" />
-                )}
-                {canAccess("documents") && (
-                  <MenuItem id="documents" label="Documents" />
-                )}
-                {canAccess("campaigns") && (
-                  <MenuItem id="campaigns" label="Campaigns" />
-                )}
               </div>
             )}
           </div>
@@ -353,10 +349,10 @@ function Sidebar({ user, activePage, onNavigate, onLogout }) {
           <div style={s.navSection}>
             <SectionHeader
               label="RECRUITMENT"
-              isOpen={activitiesOpen}
-              onToggle={() => setActivitiesOpen(!activitiesOpen)}
+              isOpen={recruitOpen}
+              onToggle={() => setRecruitOpen(!recruitOpen)}
             />
-            {activitiesOpen && (
+            {recruitOpen && (
               <div style={s.sectionItems}>
                 {canAccess("jobs") && <MenuItem id="jobs" label="Job Orders" />}
                 {canAccess("candidates") && (
@@ -376,7 +372,35 @@ function Sidebar({ user, activePage, onNavigate, onLogout }) {
           </div>
         )}
 
-        {["reports", "analytics", "workqueue"].some((m) => canAccess(m)) && (
+        {["leaves", "attendance", "payslips", "employees"].some((m) =>
+          canAccess(m),
+        ) && (
+          <div style={s.navSection}>
+            <SectionHeader
+              label="HR"
+              isOpen={hrOpen}
+              onToggle={() => setHrOpen(!hrOpen)}
+            />
+            {hrOpen && (
+              <div style={s.sectionItems}>
+                {canAccess("leaves") && (
+                  <MenuItem id="leaves" label="Leave Management" />
+                )}
+                {canAccess("attendance") && (
+                  <MenuItem id="attendance" label="Attendance" />
+                )}
+                {canAccess("payslips") && (
+                  <MenuItem id="payslips" label="Payslips" />
+                )}
+                {canAccess("employees") && (
+                  <MenuItem id="employees" label="Employees" />
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {["reports", "analytics"].some((m) => canAccess(m)) && (
           <div style={s.navSection}>
             <SectionHeader
               label="INSIGHTS"
@@ -391,15 +415,12 @@ function Sidebar({ user, activePage, onNavigate, onLogout }) {
                 {canAccess("analytics") && (
                   <MenuItem id="analytics" label="Analytics" />
                 )}
-                {canAccess("workqueue") && (
-                  <MenuItem id="workqueue" label="Workqueue" />
-                )}
               </div>
             )}
           </div>
         )}
 
-        {["calendar", "invoice", "goals", "notes", "payslips"].some((m) =>
+        {["calendar", "invoice", "goals", "notes"].some((m) =>
           canAccess(m),
         ) && (
           <div style={s.navSection}>
@@ -421,9 +442,6 @@ function Sidebar({ user, activePage, onNavigate, onLogout }) {
                 )}
                 {canAccess("notes") && (
                   <MenuItem id="notes" label="Internal Notes" />
-                )}
-                {canAccess("payslips") && (
-                  <MenuItem id="payslips" label="Payslips" />
                 )}
               </div>
             )}
@@ -660,3 +678,4 @@ const s = {
 };
 
 export default Sidebar;
+// Sidebar already has employees in HR section via canAccess
