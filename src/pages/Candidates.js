@@ -1,100 +1,91 @@
 import React, { useState, useEffect } from "react";
-import {
-  getCandidates,
-  createCandidate,
-  updateCandidate,
-  deleteCandidate,
-} from "../services/api";
+import axios from "axios";
 import * as XLSX from "xlsx";
 import { saveAs } from "file-saver";
+import Pagination, { usePagination } from "../components/Pagination";
 
-const exportToExcel = (data, filename) => {
-  if (!data || data.length === 0) {
-    alert("No data to export!");
-    return;
-  }
-  const ws = XLSX.utils.json_to_sheet(data);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Candidates");
-  const buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });
-  saveAs(
-    new Blob([buf], {
-      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    }),
-    `${filename}_${new Date().toISOString().split("T")[0]}.xlsx`,
-  );
-};
+const BASE_URL = "http://localhost:8080/api";
+const STAGES = [
+  "New",
+  "Screening",
+  "Interview",
+  "Offered",
+  "Placed",
+  "Rejected",
+];
 
-function Candidates() {
+export default function Candidates() {
   const [candidates, setCandidates] = useState([]);
   const [showModal, setShowModal] = useState(false);
   const [editItem, setEditItem] = useState(null);
-  const [selected, setSelected] = useState([]);
-  const [filterOpen, setFilterOpen] = useState(true);
-  const [viewMode, setViewMode] = useState("list");
   const [filterStage, setFilterStage] = useState("All");
-  const [sortField, setSortField] = useState("name");
-  const [sortDir, setSortDir] = useState("asc");
-  const [showSortMenu, setShowSortMenu] = useState(false);
-  const [page, setPage] = useState(1);
-  const perPage = 10;
+  const [searchVal, setSearchVal] = useState("");
+  const [viewMode, setViewMode] = useState("list");
+  const [loading, setLoading] = useState(true);
   const [form, setForm] = useState({
     name: "",
-    currentRole: "",
     email: "",
     phone: "",
+    currentRole: "",
     skills: "",
     experience: "",
     location: "",
-    stage: "Available",
+    stage: "New",
+    notes: "",
+    expectedSalary: "",
   });
 
   useEffect(() => {
-    fetchCandidates();
+    fetchAll();
   }, []);
-  const fetchCandidates = () =>
-    getCandidates()
-      .then((res) => setCandidates(res.data))
-      .catch(() => {});
+  const fetchAll = () => {
+    setLoading(true);
+    axios
+      .get(`${BASE_URL}/candidates`)
+      .then((r) => {
+        setCandidates(r.data);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  };
 
-  const stages = [
-    "All",
-    "Available",
-    "Screened",
-    "Interview",
-    "Shortlisted",
-    "Offered",
-    "Placed",
-  ];
-  const filtered =
-    filterStage === "All"
-      ? candidates
-      : candidates.filter((c) => c.stage === filterStage);
-  const sorted = [...filtered].sort((a, b) => {
-    const av = (a[sortField] || "").toString().toLowerCase();
-    const bv = (b[sortField] || "").toString().toLowerCase();
-    return sortDir === "asc" ? av.localeCompare(bv) : bv.localeCompare(av);
+  const filtered = candidates.filter((c) => {
+    const matchStage = filterStage === "All" || c.stage === filterStage;
+    const matchSearch =
+      !searchVal ||
+      c.name?.toLowerCase().includes(searchVal.toLowerCase()) ||
+      c.email?.toLowerCase().includes(searchVal.toLowerCase()) ||
+      c.skills?.toLowerCase().includes(searchVal.toLowerCase()) ||
+      c.currentRole?.toLowerCase().includes(searchVal.toLowerCase()) ||
+      c.location?.toLowerCase().includes(searchVal.toLowerCase());
+    return matchStage && matchSearch;
   });
-  const totalPages = Math.ceil(sorted.length / perPage);
-  const paginated = sorted.slice((page - 1) * perPage, page * perPage);
+
+  const { page, setPage, perPage, setPerPage, paginated } = usePagination(
+    filtered,
+    10,
+  );
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (editItem) await updateCandidate(editItem.id, form);
-    else await createCandidate(form);
+    if (editItem)
+      await axios.put(`${BASE_URL}/candidates/${editItem.id}`, form);
+    else await axios.post(`${BASE_URL}/candidates`, form);
     setShowModal(false);
     setEditItem(null);
     setForm({
       name: "",
-      currentRole: "",
       email: "",
       phone: "",
+      currentRole: "",
       skills: "",
       experience: "",
       location: "",
-      stage: "Available",
+      stage: "New",
+      notes: "",
+      expectedSalary: "",
     });
-    fetchCandidates();
+    fetchAll();
   };
 
   const handleEdit = (item) => {
@@ -103,185 +94,141 @@ function Candidates() {
     setShowModal(true);
   };
   const handleDelete = async (id) => {
-    if (window.confirm("Delete this candidate?")) {
-      await deleteCandidate(id);
-      fetchCandidates();
+    if (window.confirm("Delete candidate?")) {
+      await axios.delete(`${BASE_URL}/candidates/${id}`);
+      fetchAll();
     }
-  };
-  const toggleSelect = (id) =>
-    setSelected((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
-    );
-  const toggleAll = () =>
-    setSelected(
-      selected.length === paginated.length && paginated.length > 0
-        ? []
-        : paginated.map((c) => c.id),
-    );
-  const handleSort = (field) => {
-    if (sortField === field) setSortDir(sortDir === "asc" ? "desc" : "asc");
-    else {
-      setSortField(field);
-      setSortDir("asc");
-    }
-    setShowSortMenu(false);
-  };
-  const handleFilter = (stage) => {
-    setFilterStage(stage);
-    setPage(1);
-    setSelected([]);
   };
 
-  const handleExport = () => {
+  const getStageStyle = (stage) => {
+    const styles = {
+      New: { bg: "#eff6ff", color: "#3b82f6" },
+      Screening: { bg: "#fef3c7", color: "#d97706" },
+      Interview: { bg: "#f5f3ff", color: "#8b5cf6" },
+      Offered: { bg: "#f0fdf4", color: "#10b981" },
+      Placed: { bg: "#eef2ff", color: "#6366f1" },
+      Rejected: { bg: "#fef2f2", color: "#ef4444" },
+    };
+    return styles[stage] || { bg: "#f9fafb", color: "#6b7280" };
+  };
+
+  const exportToExcel = () => {
     const data = filtered.map((c) => ({
-      Name: c.name || "",
-      "Current Role": c.currentRole || "",
-      Email: c.email || "",
-      Phone: c.phone || "",
-      Skills: c.skills || "",
-      Experience: c.experience || "",
-      Location: c.location || "",
-      Stage: c.stage || "",
+      Name: c.name,
+      Email: c.email,
+      Phone: c.phone,
+      Role: c.currentRole,
+      Skills: c.skills,
+      Experience: c.experience,
+      Location: c.location,
+      Stage: c.stage,
     }));
-    exportToExcel(data, "TechNext_Candidates");
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Candidates");
+    const buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+    saveAs(
+      new Blob([buf], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      }),
+      `TechNext_Candidates_${new Date().toISOString().split("T")[0]}.xlsx`,
+    );
   };
 
-  const getStageBadge = (stage) => {
-    switch (stage) {
-      case "Placed":
-        return { bg: "#f0fdf4", color: "#10b981" };
-      case "Interview":
-        return { bg: "#f5f3ff", color: "#8b5cf6" };
-      case "Offered":
-        return { bg: "#fffbeb", color: "#f59e0b" };
-      case "Shortlisted":
-        return { bg: "#eff6ff", color: "#3b82f6" };
-      case "Screened":
-        return { bg: "#f0f9ff", color: "#0ea5e9" };
-      default:
-        return { bg: "#f9fafb", color: "#6b7280" };
-    }
-  };
-
-  const getStageColor = (stage) => {
-    switch (stage) {
-      case "Placed":
-        return "#10b981";
-      case "Interview":
-        return "#8b5cf6";
-      case "Offered":
-        return "#f59e0b";
-      case "Shortlisted":
-        return "#3b82f6";
-      case "Screened":
-        return "#0ea5e9";
-      default:
-        return "#6b7280";
-    }
-  };
-
-  const SortArrow = ({ field }) => (
-    <span
-      style={{
-        marginLeft: 3,
-        color: sortField === field ? "#6366f1" : "#d1d5db",
-        fontSize: 10,
-      }}
-    >
-      {sortField === field ? (sortDir === "asc" ? "▲" : "▼") : "⇅"}
-    </span>
-  );
-
-  const avatarColors = [
-    "#6366f1",
-    "#10b981",
-    "#f59e0b",
-    "#ef4444",
-    "#8b5cf6",
-    "#0ea5e9",
-  ];
-  const getColor = (name) =>
-    avatarColors[name ? name.charCodeAt(0) % avatarColors.length : 0];
+  if (loading)
+    return (
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          height: "60vh",
+          flexDirection: "column",
+          gap: "12px",
+        }}
+      >
+        <div
+          style={{
+            width: "36px",
+            height: "36px",
+            borderRadius: "50%",
+            border: "4px solid #eef2ff",
+            borderTop: "4px solid #6366f1",
+          }}
+        />
+        <div style={{ fontSize: "13px", color: "#9ca3af" }}>
+          Loading candidates...
+        </div>
+      </div>
+    );
 
   return (
     <div style={s.page}>
-      <div style={s.actionBar}>
-        <div style={s.abLeft}>
-          <span style={s.abTitle}>Candidates</span>
-          <span style={s.abCount}>{filtered.length}</span>
+      <div style={s.header}>
+        <div style={s.headerLeft}>
+          <span style={s.title}>Candidates</span>
+          <span style={s.count}>{filtered.length}</span>
         </div>
-        <div style={s.abRight}>
-          <button
-            style={{ ...s.abBtn, ...(filterOpen ? s.abBtnActive : {}) }}
-            onClick={() => setFilterOpen(!filterOpen)}
-          >
-            ⧩ Filter
-          </button>
-          <div style={{ position: "relative" }}>
-            <button
-              style={s.abBtn}
-              onClick={() => setShowSortMenu(!showSortMenu)}
-            >
-              ↕ Sort
-            </button>
-            {showSortMenu && (
-              <div style={s.sortMenu}>
-                {["name", "currentRole", "location", "stage", "experience"].map(
-                  (f) => (
-                    <div
-                      key={f}
-                      style={s.sortMenuItem}
-                      onClick={() => handleSort(f)}
-                    >
-                      {f === "currentRole"
-                        ? "Role"
-                        : f.charAt(0).toUpperCase() + f.slice(1)}
-                      {sortField === f && (
-                        <span style={{ marginLeft: 6, color: "#6366f1" }}>
-                          {sortDir === "asc" ? "▲" : "▼"}
-                        </span>
-                      )}
-                    </div>
-                  ),
-                )}
-              </div>
+        <div style={s.headerRight}>
+          <div style={s.searchBox}>
+            <span>🔍</span>
+            <input
+              style={s.searchInput}
+              placeholder="Search candidates..."
+              value={searchVal}
+              onChange={(e) => setSearchVal(e.target.value)}
+            />
+            {searchVal && (
+              <span
+                style={{
+                  cursor: "pointer",
+                  color: "#9ca3af",
+                  fontSize: "11px",
+                }}
+                onClick={() => setSearchVal("")}
+              >
+                ✕
+              </span>
             )}
           </div>
-          <button
-            style={{
-              ...s.abViewBtn,
-              ...(viewMode === "list" ? s.abViewActive : {}),
-            }}
-            onClick={() => setViewMode("list")}
-          >
-            ☰
-          </button>
-          <button
-            style={{
-              ...s.abViewBtn,
-              ...(viewMode === "kanban" ? s.abViewActive : {}),
-            }}
-            onClick={() => setViewMode("kanban")}
-          >
-            ⊞
-          </button>
-          <button style={s.exportBtn} onClick={handleExport}>
+          <div style={s.viewToggle}>
+            <button
+              style={{
+                ...s.viewBtn,
+                ...(viewMode === "list" ? s.viewBtnActive : {}),
+              }}
+              onClick={() => setViewMode("list")}
+            >
+              ☰ List
+            </button>
+            <button
+              style={{
+                ...s.viewBtn,
+                ...(viewMode === "kanban" ? s.viewBtnActive : {}),
+              }}
+              onClick={() => setViewMode("kanban")}
+            >
+              ⊞ Board
+            </button>
+          </div>
+          <button style={s.exportBtn} onClick={exportToExcel}>
             ⬇ Export
           </button>
-          <div style={s.abDivider} />
           <button
-            style={s.createBtn}
+            style={s.addBtn}
             onClick={() => {
               setEditItem(null);
               setForm({
                 name: "",
-                currentRole: "",
                 email: "",
                 phone: "",
+                currentRole: "",
                 skills: "",
                 experience: "",
                 location: "",
-                stage: "Available",
+                stage: "New",
+                notes: "",
+                expectedSalary: "",
               });
               setShowModal(true);
             }}
@@ -291,320 +238,344 @@ function Candidates() {
         </div>
       </div>
 
-      <div style={s.body}>
-        {filterOpen && (
-          <div style={s.filterPanel}>
-            <div style={s.fpHeader}>Filter by</div>
-            <div style={s.fpSearch}>
-              <input
-                style={s.fpSearchInput}
-                placeholder="🔍 Search candidates..."
-              />
-            </div>
-            <div style={s.fpSection}>
-              <div style={s.fpSectionTitle}>STAGE</div>
-              {stages.map((st) => (
-                <div
-                  key={st}
-                  style={{
-                    ...s.fpItem,
-                    ...(filterStage === st ? s.fpItemActive : {}),
-                  }}
-                  onClick={() => handleFilter(st)}
-                >
-                  <input
-                    type="checkbox"
-                    checked={filterStage === st}
-                    onChange={() => handleFilter(st)}
-                    style={{ marginRight: 8, cursor: "pointer" }}
-                  />
-                  {st !== "All" && (
-                    <div
-                      style={{ ...s.fpDot, background: getStageColor(st) }}
-                    />
-                  )}
-                  <span
+      {/* Stage Filter */}
+      <div style={s.filterBar}>
+        {["All", ...STAGES].map((st) => {
+          const cnt =
+            st === "All"
+              ? candidates.length
+              : candidates.filter((c) => c.stage === st).length;
+          const style =
+            st !== "All"
+              ? getStageStyle(st)
+              : { bg: "#eef2ff", color: "#6366f1" };
+          return (
+            <button
+              key={st}
+              style={{
+                ...s.filterBtn,
+                ...(filterStage === st
+                  ? {
+                      background: style.bg,
+                      color: style.color,
+                      border: `1px solid ${style.color}`,
+                      fontWeight: "700",
+                    }
+                  : {}),
+              }}
+              onClick={() => setFilterStage(st)}
+            >
+              {st}{" "}
+              <span style={{ fontSize: "10px", opacity: 0.7 }}>({cnt})</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {viewMode === "list" && (
+        <div
+          style={{
+            background: "#fff",
+            margin: "16px",
+            borderRadius: "12px",
+            border: "1px solid #e5e7f0",
+            overflow: "hidden",
+            flex: 1,
+          }}
+        >
+          <table style={s.table}>
+            <thead>
+              <tr style={s.thead}>
+                {[
+                  "Candidate",
+                  "Role",
+                  "Skills",
+                  "Experience",
+                  "Location",
+                  "Stage",
+                  "Actions",
+                ].map((h) => (
+                  <th key={h} style={s.th}>
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {paginated.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={7}
                     style={{
-                      ...s.fpLabel,
-                      ...(filterStage === st
-                        ? { color: "#6366f1", fontWeight: 700 }
-                        : {}),
+                      padding: "60px",
+                      textAlign: "center",
+                      color: "#9ca3af",
                     }}
                   >
-                    {st === "All" ? "All Candidates" : st}
-                  </span>
-                  <span style={s.fpCount}>
-                    {st === "All"
-                      ? candidates.length
-                      : candidates.filter((c) => c.stage === st).length}
-                  </span>
-                </div>
-              ))}
-            </div>
-            <div style={s.fpDivider} />
-            <div style={s.fpSection}>
-              <div style={s.fpSectionTitle}>QUICK STATS</div>
-              <div style={s.fpStat}>
-                <span>Total</span>
-                <strong>{candidates.length}</strong>
-              </div>
-              <div style={s.fpStat}>
-                <span style={{ color: "#10b981" }}>✅ Placed</span>
-                <strong>
-                  {candidates.filter((c) => c.stage === "Placed").length}
-                </strong>
-              </div>
-              <div style={s.fpStat}>
-                <span style={{ color: "#8b5cf6" }}>🎯 Interview</span>
-                <strong>
-                  {candidates.filter((c) => c.stage === "Interview").length}
-                </strong>
-              </div>
-            </div>
-          </div>
-        )}
-
-        <div style={s.mainContent}>
-          <div style={s.paginationBar}>
-            <span style={s.pgTotal}>{filtered.length} candidates</span>
-            <div style={s.pgRight}>
-              <button
-                style={{ ...s.pgBtn, ...(page === 1 ? s.pgBtnDisabled : {}) }}
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                disabled={page === 1}
-              >
-                ◀
-              </button>
-              <span style={s.pgInfo}>
-                {filtered.length === 0 ? 0 : (page - 1) * perPage + 1}–
-                {Math.min(page * perPage, filtered.length)}
-              </span>
-              <button
-                style={{
-                  ...s.pgBtn,
-                  ...(page === totalPages || totalPages === 0
-                    ? s.pgBtnDisabled
-                    : {}),
-                }}
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                disabled={page === totalPages || totalPages === 0}
-              >
-                ▶
-              </button>
-            </div>
-          </div>
-
-          {viewMode === "list" && (
-            <table style={s.table}>
-              <thead>
-                <tr style={s.thead}>
-                  <th style={s.thCheck}>
-                    <input
-                      type="checkbox"
-                      checked={
-                        selected.length === paginated.length &&
-                        paginated.length > 0
-                      }
-                      onChange={toggleAll}
-                      style={{ cursor: "pointer" }}
-                    />
-                  </th>
-                  <th
-                    style={{ ...s.th, cursor: "pointer" }}
-                    onClick={() => handleSort("name")}
-                  >
-                    Name <SortArrow field="name" />
-                  </th>
-                  <th
-                    style={{ ...s.th, cursor: "pointer" }}
-                    onClick={() => handleSort("currentRole")}
-                  >
-                    Current Role <SortArrow field="currentRole" />
-                  </th>
-                  <th style={s.th}>Skills</th>
-                  <th
-                    style={{ ...s.th, cursor: "pointer" }}
-                    onClick={() => handleSort("experience")}
-                  >
-                    Experience <SortArrow field="experience" />
-                  </th>
-                  <th
-                    style={{ ...s.th, cursor: "pointer" }}
-                    onClick={() => handleSort("location")}
-                  >
-                    Location <SortArrow field="location" />
-                  </th>
-                  <th
-                    style={{ ...s.th, cursor: "pointer" }}
-                    onClick={() => handleSort("stage")}
-                  >
-                    Stage <SortArrow field="stage" />
-                  </th>
-                  <th style={s.thIcon}>Actions</th>
+                    <div style={{ fontSize: "40px", marginBottom: "12px" }}>
+                      🪪
+                    </div>
+                    <div
+                      style={{
+                        fontSize: "15px",
+                        fontWeight: "700",
+                        color: "#0f1117",
+                        marginBottom: "6px",
+                      }}
+                    >
+                      No candidates found
+                    </div>
+                    <button style={s.addBtn} onClick={() => setShowModal(true)}>
+                      + Add Candidate
+                    </button>
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                {paginated.length === 0 ? (
-                  <tr>
-                    <td colSpan={8} style={s.emptyCell}>
-                      <div style={s.emptyWrap}>
-                        <div style={{ fontSize: "40px" }}>🪪</div>
-                        <div style={s.emptyTitle}>No candidates yet</div>
-                        <div style={s.emptySub}>Add your first candidate</div>
-                      </div>
-                    </td>
-                  </tr>
-                ) : (
-                  paginated.map((c) => {
-                    const b = getStageBadge(c.stage);
-                    return (
-                      <tr
-                        key={c.id}
-                        style={{
-                          ...s.trow,
-                          ...(selected.includes(c.id) ? s.trowSelected : {}),
-                        }}
-                      >
-                        <td style={s.tdCheck}>
-                          <input
-                            type="checkbox"
-                            checked={selected.includes(c.id)}
-                            onChange={() => toggleSelect(c.id)}
-                            style={{ cursor: "pointer" }}
-                          />
-                        </td>
-                        <td style={s.td}>
-                          <div style={s.nameCell}>
+              ) : (
+                paginated.map((c) => {
+                  const st = getStageStyle(c.stage);
+                  return (
+                    <tr key={c.id} style={s.trow}>
+                      <td style={s.td}>
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "10px",
+                          }}
+                        >
+                          <div
+                            style={{
+                              ...s.avatar,
+                              background: `hsl(${((c.name?.charCodeAt(0) || 0) * 137) % 360},60%,55%)`,
+                            }}
+                          >
+                            {c.name?.charAt(0)?.toUpperCase()}
+                          </div>
+                          <div>
                             <div
                               style={{
-                                ...s.nameAvatar,
-                                background: getColor(c.name),
+                                fontSize: "13px",
+                                fontWeight: "700",
+                                color: "#6366f1",
+                                cursor: "pointer",
                               }}
+                              onClick={() => handleEdit(c)}
                             >
-                              {c.name ? c.name.charAt(0).toUpperCase() : "?"}
+                              {c.name}
                             </div>
-                            <div>
-                              <div
-                                style={s.nameText}
-                                onClick={() => handleEdit(c)}
-                              >
-                                {c.name}
-                              </div>
-                              <div style={s.nameEmail}>{c.email || ""}</div>
+                            <div style={{ fontSize: "11px", color: "#9ca3af" }}>
+                              {c.email}
                             </div>
                           </div>
-                        </td>
-                        <td style={s.td}>{c.currentRole || "—"}</td>
-                        <td style={s.td}>
+                        </div>
+                      </td>
+                      <td style={s.td}>{c.currentRole || "—"}</td>
+                      <td style={s.td}>
+                        <div
+                          style={{
+                            fontSize: "12px",
+                            color: "#6b7280",
+                            maxWidth: "180px",
+                          }}
+                        >
                           {c.skills
                             ? c.skills
                                 .split(",")
-                                .slice(0, 2)
-                                .map((sk, i) => (
-                                  <span key={i} style={s.skillChip}>
+                                .slice(0, 3)
+                                .map((sk) => (
+                                  <span
+                                    key={sk}
+                                    style={{
+                                      background: "#f1f3f9",
+                                      borderRadius: "20px",
+                                      padding: "2px 8px",
+                                      fontSize: "10.5px",
+                                      marginRight: "4px",
+                                      display: "inline-block",
+                                    }}
+                                  >
                                     {sk.trim()}
                                   </span>
                                 ))
                             : "—"}
-                        </td>
-                        <td style={s.td}>{c.experience || "—"}</td>
-                        <td style={s.td}>{c.location || "—"}</td>
-                        <td style={s.td}>
-                          <span
-                            style={{
-                              ...s.badge,
-                              background: b.bg,
-                              color: b.color,
-                            }}
+                        </div>
+                      </td>
+                      <td style={s.td}>{c.experience || "—"}</td>
+                      <td style={s.td}>{c.location || "—"}</td>
+                      <td style={s.td}>
+                        <span
+                          style={{
+                            ...s.badge,
+                            background: st.bg,
+                            color: st.color,
+                          }}
+                        >
+                          {c.stage}
+                        </span>
+                      </td>
+                      <td style={s.td}>
+                        <div style={{ display: "flex", gap: "6px" }}>
+                          <button
+                            style={s.editBtn}
+                            onClick={() => handleEdit(c)}
                           >
-                            {c.stage}
-                          </span>
-                        </td>
-                        <td style={s.td}>
-                          <div style={s.actions}>
-                            <button
-                              style={s.editBtn}
-                              onClick={() => handleEdit(c)}
-                            >
-                              Edit
-                            </button>
-                            <button
-                              style={s.delBtn}
-                              onClick={() => handleDelete(c.id)}
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          )}
+                            ✏️ Edit
+                          </button>
+                          <button
+                            style={s.delBtn}
+                            onClick={() => handleDelete(c.id)}
+                          >
+                            🗑
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+          <Pagination
+            total={filtered.length}
+            page={page}
+            perPage={perPage}
+            onPageChange={setPage}
+            onPerPageChange={setPerPage}
+          />
+        </div>
+      )}
 
-          {viewMode === "kanban" && (
-            <div style={s.kanban}>
-              {stages
-                .filter((st) => st !== "All")
-                .map((stage) => {
-                  const stageC = candidates.filter((c) => c.stage === stage);
-                  const b = getStageBadge(stage);
-                  return (
-                    <div key={stage} style={s.kCol}>
+      {viewMode === "kanban" && (
+        <div
+          style={{
+            display: "flex",
+            gap: "12px",
+            padding: "16px",
+            overflowX: "auto",
+            flex: 1,
+          }}
+        >
+          {STAGES.map((stage) => {
+            const items = candidates.filter((c) => c.stage === stage);
+            const st = getStageStyle(stage);
+            return (
+              <div
+                key={stage}
+                style={{
+                  minWidth: "220px",
+                  flex: 1,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "8px",
+                }}
+              >
+                <div
+                  style={{
+                    background: st.bg,
+                    borderRadius: "10px",
+                    padding: "10px 14px",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                  }}
+                >
+                  <span
+                    style={{
+                      fontSize: "12px",
+                      fontWeight: "700",
+                      color: st.color,
+                    }}
+                  >
+                    {stage}
+                  </span>
+                  <span
+                    style={{
+                      background: st.color,
+                      color: "#fff",
+                      fontSize: "11px",
+                      fontWeight: "700",
+                      padding: "2px 8px",
+                      borderRadius: "20px",
+                    }}
+                  >
+                    {items.length}
+                  </span>
+                </div>
+                {items.map((c) => (
+                  <div
+                    key={c.id}
+                    style={{
+                      background: "#fff",
+                      borderRadius: "10px",
+                      border: "1px solid #e5e7f0",
+                      padding: "14px",
+                      cursor: "pointer",
+                      boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
+                    }}
+                    onClick={() => handleEdit(c)}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "8px",
+                        marginBottom: "8px",
+                      }}
+                    >
                       <div
                         style={{
-                          ...s.kHead,
-                          borderTop: `3px solid ${getStageColor(stage)}`,
+                          ...s.avatar,
+                          width: "28px",
+                          height: "28px",
+                          borderRadius: "8px",
+                          background: `hsl(${((c.name?.charCodeAt(0) || 0) * 137) % 360},60%,55%)`,
                         }}
                       >
-                        <span
-                          style={{ ...s.kTitle, color: getStageColor(stage) }}
-                        >
-                          {stage}
-                        </span>
-                        <span style={s.kCount}>{stageC.length}</span>
+                        {c.name?.charAt(0)?.toUpperCase()}
                       </div>
-                      {stageC.map((c) => (
-                        <div
-                          key={c.id}
-                          style={s.kCard}
-                          onClick={() => handleEdit(c)}
-                        >
-                          <div style={s.kCardTop}>
-                            <div
-                              style={{
-                                ...s.kAvatar,
-                                background: getColor(c.name),
-                              }}
-                            >
-                              {c.name ? c.name.charAt(0).toUpperCase() : "?"}
-                            </div>
-                            <span
-                              style={{
-                                ...s.badge,
-                                background: b.bg,
-                                color: b.color,
-                                fontSize: "10px",
-                              }}
-                            >
-                              {c.stage}
-                            </span>
-                          </div>
-                          <div style={s.kName}>{c.name}</div>
-                          <div style={s.kRole}>{c.currentRole || "—"}</div>
-                          <div style={s.kMeta}>📍 {c.location || "—"}</div>
-                          <div style={s.kMeta}>⏱ {c.experience || "—"}</div>
-                        </div>
-                      ))}
+                      <div
+                        style={{
+                          fontSize: "13px",
+                          fontWeight: "700",
+                          color: "#0f1117",
+                        }}
+                      >
+                        {c.name}
+                      </div>
                     </div>
-                  );
-                })}
-            </div>
-          )}
+                    <div
+                      style={{
+                        fontSize: "12px",
+                        color: "#6b7280",
+                        marginBottom: "4px",
+                      }}
+                    >
+                      {c.currentRole || "—"}
+                    </div>
+                    <div style={{ fontSize: "11px", color: "#9ca3af" }}>
+                      {c.location || "—"}
+                    </div>
+                  </div>
+                ))}
+                {items.length === 0 && (
+                  <div
+                    style={{
+                      textAlign: "center",
+                      padding: "20px",
+                      fontSize: "12px",
+                      color: "#9ca3af",
+                      border: "1.5px dashed #e5e7f0",
+                      borderRadius: "10px",
+                    }}
+                  >
+                    No candidates
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
-      </div>
+      )}
 
       {showModal && (
         <div style={s.overlay}>
@@ -614,38 +585,36 @@ function Candidates() {
                 <div style={s.modalTitle}>
                   {editItem ? "Edit Candidate" : "Add Candidate"}
                 </div>
-                <div style={s.modalSub}>Candidate profile</div>
+                <div style={s.modalSub}>Fill in candidate details</div>
               </div>
               <button style={s.closeBtn} onClick={() => setShowModal(false)}>
                 ✕
               </button>
             </div>
-            <form onSubmit={handleSubmit} style={s.modalBody}>
+            <form onSubmit={handleSubmit} style={{ padding: "24px" }}>
               <div style={s.formRow}>
-                <div style={s.formGroup}>
+                <div style={s.fg}>
                   <label style={s.label}>Full Name *</label>
                   <input
                     style={s.input}
                     value={form.name}
                     onChange={(e) => setForm({ ...form, name: e.target.value })}
                     required
-                    placeholder="Full name"
                   />
                 </div>
-                <div style={s.formGroup}>
-                  <label style={s.label}>Current Role</label>
+                <div style={s.fg}>
+                  <label style={s.label}>Phone</label>
                   <input
                     style={s.input}
-                    value={form.currentRole}
+                    value={form.phone}
                     onChange={(e) =>
-                      setForm({ ...form, currentRole: e.target.value })
+                      setForm({ ...form, phone: e.target.value })
                     }
-                    placeholder="e.g. React Developer"
                   />
                 </div>
               </div>
               <div style={s.formRow}>
-                <div style={s.formGroup}>
+                <div style={s.fg}>
                   <label style={s.label}>Email</label>
                   <input
                     style={s.input}
@@ -654,34 +623,21 @@ function Candidates() {
                     onChange={(e) =>
                       setForm({ ...form, email: e.target.value })
                     }
-                    placeholder="email@example.com"
                   />
                 </div>
-                <div style={s.formGroup}>
-                  <label style={s.label}>Phone</label>
+                <div style={s.fg}>
+                  <label style={s.label}>Current Role</label>
                   <input
                     style={s.input}
-                    value={form.phone}
+                    value={form.currentRole}
                     onChange={(e) =>
-                      setForm({ ...form, phone: e.target.value })
+                      setForm({ ...form, currentRole: e.target.value })
                     }
-                    placeholder="+91 98765 43210"
                   />
                 </div>
               </div>
               <div style={s.formRow}>
-                <div style={s.formGroup}>
-                  <label style={s.label}>Skills</label>
-                  <input
-                    style={s.input}
-                    value={form.skills}
-                    onChange={(e) =>
-                      setForm({ ...form, skills: e.target.value })
-                    }
-                    placeholder="React, Node.js, Python"
-                  />
-                </div>
-                <div style={s.formGroup}>
+                <div style={s.fg}>
                   <label style={s.label}>Experience</label>
                   <input
                     style={s.input}
@@ -692,9 +648,7 @@ function Candidates() {
                     placeholder="e.g. 3 years"
                   />
                 </div>
-              </div>
-              <div style={s.formRow}>
-                <div style={s.formGroup}>
+                <div style={s.fg}>
                   <label style={s.label}>Location</label>
                   <input
                     style={s.input}
@@ -702,10 +656,31 @@ function Candidates() {
                     onChange={(e) =>
                       setForm({ ...form, location: e.target.value })
                     }
-                    placeholder="City"
                   />
                 </div>
-                <div style={s.formGroup}>
+              </div>
+              <div style={s.fg}>
+                <label style={s.label}>Skills (comma separated)</label>
+                <input
+                  style={s.input}
+                  value={form.skills}
+                  onChange={(e) => setForm({ ...form, skills: e.target.value })}
+                  placeholder="React, Java, Python"
+                />
+              </div>
+              <div style={s.formRow}>
+                <div style={s.fg}>
+                  <label style={s.label}>Expected Salary</label>
+                  <input
+                    style={s.input}
+                    value={form.expectedSalary}
+                    onChange={(e) =>
+                      setForm({ ...form, expectedSalary: e.target.value })
+                    }
+                    placeholder="e.g. 8 LPA"
+                  />
+                </div>
+                <div style={s.fg}>
                   <label style={s.label}>Stage</label>
                   <select
                     style={s.input}
@@ -714,15 +689,29 @@ function Candidates() {
                       setForm({ ...form, stage: e.target.value })
                     }
                   >
-                    {stages
-                      .filter((st) => st !== "All")
-                      .map((st) => (
-                        <option key={st}>{st}</option>
-                      ))}
+                    {STAGES.map((st) => (
+                      <option key={st}>{st}</option>
+                    ))}
                   </select>
                 </div>
               </div>
-              <div style={s.modalFoot}>
+              <div style={s.fg}>
+                <label style={s.label}>Notes</label>
+                <textarea
+                  style={{ ...s.input, minHeight: "70px" }}
+                  value={form.notes}
+                  onChange={(e) => setForm({ ...form, notes: e.target.value })}
+                />
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "flex-end",
+                  gap: "10px",
+                  paddingTop: "12px",
+                  borderTop: "1px solid #e5e7f0",
+                }}
+              >
                 <button
                   type="button"
                   style={s.cancelBtn}
@@ -731,7 +720,7 @@ function Candidates() {
                   Cancel
                 </button>
                 <button type="submit" style={s.saveBtn}>
-                  {editItem ? "Update" : "Save Candidate"}
+                  {editItem ? "Update" : "Add Candidate"}
                 </button>
               </div>
             </form>
@@ -750,18 +739,19 @@ const s = {
     background: "#f8f9fc",
     fontFamily: "'Plus Jakarta Sans',sans-serif",
   },
-  actionBar: {
+  header: {
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
-    padding: "12px 20px",
+    padding: "14px 20px",
     background: "#fff",
     borderBottom: "1px solid #e5e7f0",
-    gap: "8px",
+    flexWrap: "wrap",
+    gap: "10px",
   },
-  abLeft: { display: "flex", alignItems: "center", gap: "10px" },
-  abTitle: { fontSize: "15px", fontWeight: "700", color: "#0f1117" },
-  abCount: {
+  headerLeft: { display: "flex", alignItems: "center", gap: "10px" },
+  title: { fontSize: "15px", fontWeight: "700", color: "#0f1117" },
+  count: {
     background: "#eef2ff",
     color: "#6366f1",
     fontSize: "12px",
@@ -769,36 +759,48 @@ const s = {
     padding: "2px 9px",
     borderRadius: "20px",
   },
-  abRight: { display: "flex", alignItems: "center", gap: "6px" },
-  abBtn: {
-    background: "#fff",
+  headerRight: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    flexWrap: "wrap",
+  },
+  searchBox: {
+    display: "flex",
+    alignItems: "center",
+    gap: "6px",
+    background: "#f8f9fc",
     border: "1px solid #e5e7f0",
     borderRadius: "8px",
-    padding: "6px 12px",
+    padding: "6px 10px",
+  },
+  searchInput: {
+    background: "none",
+    border: "none",
+    outline: "none",
+    fontSize: "12.5px",
+    color: "#374151",
+    fontFamily: "inherit",
+    width: "160px",
+  },
+  viewToggle: {
+    display: "flex",
+    background: "#f8f9fc",
+    border: "1px solid #e5e7f0",
+    borderRadius: "8px",
+    overflow: "hidden",
+  },
+  viewBtn: {
+    background: "none",
+    border: "none",
+    padding: "6px 14px",
     fontSize: "12.5px",
     color: "#6b7280",
     cursor: "pointer",
     fontWeight: "500",
+    fontFamily: "inherit",
   },
-  abBtnActive: {
-    background: "#eef2ff",
-    borderColor: "#6366f1",
-    color: "#6366f1",
-  },
-  abViewBtn: {
-    background: "#fff",
-    border: "1px solid #e5e7f0",
-    borderRadius: "8px",
-    padding: "6px 10px",
-    fontSize: "14px",
-    color: "#6b7280",
-    cursor: "pointer",
-  },
-  abViewActive: {
-    background: "#eef2ff",
-    borderColor: "#6366f1",
-    color: "#6366f1",
-  },
+  viewBtnActive: { background: "#6366f1", color: "#fff", fontWeight: "700" },
   exportBtn: {
     background: "#f0fdf4",
     border: "1px solid #bbf7d0",
@@ -809,13 +811,7 @@ const s = {
     cursor: "pointer",
     fontWeight: "600",
   },
-  abDivider: {
-    width: "1px",
-    height: "24px",
-    background: "#e5e7f0",
-    margin: "0 6px",
-  },
-  createBtn: {
+  addBtn: {
     background: "linear-gradient(135deg,#6366f1,#4f46e5)",
     color: "#fff",
     border: "none",
@@ -826,104 +822,29 @@ const s = {
     cursor: "pointer",
     boxShadow: "0 2px 8px rgba(99,102,241,0.3)",
   },
-  body: { display: "flex", flex: 1, overflow: "hidden" },
-  filterPanel: {
-    width: "230px",
-    minWidth: "230px",
-    background: "#fff",
-    borderRight: "1px solid #e5e7f0",
-    overflowY: "auto",
-    padding: "16px 0",
-  },
-  fpHeader: {
-    fontSize: "11px",
-    fontWeight: "700",
-    color: "#9ca3af",
-    padding: "0 16px 12px",
-    textTransform: "uppercase",
-    letterSpacing: "1px",
-  },
-  fpSearch: { padding: "0 12px 12px" },
-  fpSearchInput: {
-    width: "100%",
-    padding: "8px 12px",
-    borderRadius: "8px",
-    border: "1px solid #e5e7f0",
-    fontSize: "12.5px",
-    outline: "none",
-    boxSizing: "border-box",
-    background: "#f8f9fc",
-  },
-  fpSection: { marginBottom: "8px", padding: "0 8px" },
-  fpSectionTitle: {
-    fontSize: "10px",
-    fontWeight: "700",
-    color: "#9ca3af",
-    padding: "6px 8px",
-    textTransform: "uppercase",
-    letterSpacing: "1px",
-  },
-  fpItem: {
+  filterBar: {
     display: "flex",
-    alignItems: "center",
-    padding: "7px 8px",
-    cursor: "pointer",
-    borderRadius: "8px",
-    userSelect: "none",
-    gap: "6px",
-  },
-  fpItemActive: { background: "#eef2ff" },
-  fpDot: { width: "8px", height: "8px", borderRadius: "50%", flexShrink: 0 },
-  fpLabel: { flex: 1, fontSize: "13px", color: "#374151", fontWeight: "500" },
-  fpCount: {
-    fontSize: "11px",
-    color: "#9ca3af",
-    background: "#f1f3f9",
-    padding: "1px 8px",
-    borderRadius: "20px",
-    fontWeight: "600",
-  },
-  fpDivider: { height: "1px", background: "#f1f3f9", margin: "12px 0" },
-  fpStat: {
-    display: "flex",
-    justifyContent: "space-between",
-    padding: "5px 8px",
-    fontSize: "12.5px",
-    color: "#6b7280",
-  },
-  mainContent: {
-    flex: 1,
-    overflowY: "auto",
-    display: "flex",
-    flexDirection: "column",
-  },
-  paginationBar: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
+    gap: "8px",
     padding: "10px 20px",
     background: "#fff",
-    borderBottom: "1px solid #f1f3f9",
-  },
-  pgTotal: { fontSize: "12.5px", color: "#6b7280", fontWeight: "500" },
-  pgRight: { display: "flex", alignItems: "center", gap: "8px" },
-  pgBtn: {
-    background: "#fff",
-    border: "1px solid #e5e7f0",
-    borderRadius: "6px",
-    padding: "4px 10px",
-    fontSize: "11px",
-    cursor: "pointer",
-    color: "#6b7280",
-  },
-  pgBtnDisabled: { opacity: 0.4, cursor: "not-allowed" },
-  pgInfo: { fontSize: "12px", color: "#6b7280" },
-  table: { width: "100%", borderCollapse: "collapse", background: "#fff" },
-  thead: { background: "#f8f9fc" },
-  thCheck: {
-    padding: "12px 10px 12px 20px",
     borderBottom: "1px solid #e5e7f0",
+    overflowX: "auto",
+    flexWrap: "wrap",
   },
+  filterBtn: {
+    background: "#f8f9fc",
+    border: "1px solid #e5e7f0",
+    borderRadius: "20px",
+    padding: "5px 14px",
+    fontSize: "12px",
+    color: "#6b7280",
+    cursor: "pointer",
+    fontWeight: "500",
+    fontFamily: "inherit",
+    whiteSpace: "nowrap",
+  },
+  table: { width: "100%", borderCollapse: "collapse" },
+  thead: { background: "#f8f9fc" },
   th: {
     padding: "11px 14px",
     fontSize: "10.5px",
@@ -935,61 +856,33 @@ const s = {
     letterSpacing: "0.8px",
     whiteSpace: "nowrap",
   },
-  thIcon: {
-    padding: "11px 14px",
-    fontSize: "10.5px",
-    color: "#9ca3af",
-    fontWeight: "700",
-    borderBottom: "1px solid #e5e7f0",
-  },
-  trow: { borderBottom: "1px solid #f1f3f9", transition: "background 0.1s" },
-  trowSelected: { background: "#fafbff" },
-  tdCheck: { padding: "12px 10px 12px 20px" },
+  trow: { borderBottom: "1px solid #f1f3f9" },
   td: { padding: "12px 14px", fontSize: "13px", color: "#374151" },
-  nameCell: { display: "flex", alignItems: "center", gap: "10px" },
-  nameAvatar: {
-    width: "36px",
-    height: "36px",
-    borderRadius: "10px",
+  avatar: {
+    width: "32px",
+    height: "32px",
+    borderRadius: "9px",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    fontSize: "14px",
+    fontSize: "13px",
     fontWeight: "700",
     color: "#fff",
     flexShrink: 0,
   },
-  nameText: {
-    fontSize: "13px",
-    fontWeight: "600",
-    color: "#6366f1",
-    cursor: "pointer",
-  },
-  nameEmail: { fontSize: "11px", color: "#9ca3af", marginTop: "1px" },
-  skillChip: {
-    background: "#f1f3f9",
-    color: "#6b7280",
-    padding: "2px 7px",
-    borderRadius: "20px",
-    fontSize: "11px",
-    fontWeight: "600",
-    marginRight: "4px",
-    display: "inline-block",
-  },
   badge: {
-    padding: "4px 10px",
-    borderRadius: "20px",
     fontSize: "11.5px",
     fontWeight: "700",
+    padding: "3px 9px",
+    borderRadius: "20px",
   },
-  actions: { display: "flex", gap: "6px" },
   editBtn: {
     background: "#eef2ff",
-    color: "#4f46e5",
+    color: "#6366f1",
     border: "none",
     borderRadius: "7px",
     padding: "5px 10px",
-    fontSize: "11.5px",
+    fontSize: "12px",
     fontWeight: "600",
     cursor: "pointer",
   },
@@ -998,104 +891,10 @@ const s = {
     color: "#ef4444",
     border: "none",
     borderRadius: "7px",
-    padding: "5px 10px",
-    fontSize: "11.5px",
+    padding: "5px 8px",
+    fontSize: "12px",
     fontWeight: "600",
     cursor: "pointer",
-  },
-  emptyCell: { padding: "60px", textAlign: "center" },
-  emptyWrap: {
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    gap: "8px",
-  },
-  emptyTitle: { fontSize: "15px", fontWeight: "700", color: "#0f1117" },
-  emptySub: { fontSize: "13px", color: "#9ca3af" },
-  kanban: {
-    display: "flex",
-    gap: "12px",
-    padding: "16px",
-    overflowX: "auto",
-    alignItems: "flex-start",
-  },
-  kCol: {
-    minWidth: "200px",
-    flex: 1,
-    background: "#f8f9fc",
-    borderRadius: "12px",
-    overflow: "hidden",
-  },
-  kHead: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    padding: "12px 12px 10px",
-    background: "#fff",
-    marginBottom: "8px",
-  },
-  kTitle: { fontSize: "12px", fontWeight: "700" },
-  kCount: {
-    background: "#f1f3f9",
-    borderRadius: "20px",
-    padding: "2px 8px",
-    fontSize: "11px",
-    color: "#6b7280",
-    fontWeight: "600",
-  },
-  kCard: {
-    background: "#fff",
-    borderRadius: "10px",
-    padding: "12px",
-    marginBottom: "8px",
-    cursor: "pointer",
-    border: "1px solid #e5e7f0",
-    margin: "0 8px 8px",
-    boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
-  },
-  kCardTop: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: "8px",
-  },
-  kAvatar: {
-    width: "28px",
-    height: "28px",
-    borderRadius: "8px",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontSize: "11px",
-    fontWeight: "700",
-    color: "#fff",
-  },
-  kName: {
-    fontSize: "13px",
-    fontWeight: "700",
-    color: "#0f1117",
-    marginBottom: "2px",
-  },
-  kRole: { fontSize: "12px", color: "#6b7280", marginBottom: "4px" },
-  kMeta: { fontSize: "11px", color: "#9ca3af", marginBottom: "2px" },
-  sortMenu: {
-    position: "absolute",
-    top: "36px",
-    left: 0,
-    background: "#fff",
-    border: "1px solid #e5e7f0",
-    borderRadius: "10px",
-    boxShadow: "0 4px 16px rgba(0,0,0,0.1)",
-    zIndex: 100,
-    minWidth: "160px",
-  },
-  sortMenuItem: {
-    padding: "9px 14px",
-    fontSize: "12.5px",
-    color: "#374151",
-    cursor: "pointer",
-    display: "flex",
-    alignItems: "center",
   },
   overlay: {
     position: "fixed",
@@ -1110,7 +909,7 @@ const s = {
   modal: {
     background: "#fff",
     borderRadius: "16px",
-    width: "560px",
+    width: "580px",
     maxHeight: "92vh",
     overflowY: "auto",
     boxShadow: "0 32px 80px rgba(0,0,0,0.2)",
@@ -1137,16 +936,14 @@ const s = {
     cursor: "pointer",
     fontSize: "14px",
     color: "#6b7280",
-    flexShrink: 0,
   },
-  modalBody: { padding: "24px" },
   formRow: {
     display: "grid",
     gridTemplateColumns: "1fr 1fr",
     gap: "14px",
     marginBottom: "14px",
   },
-  formGroup: {
+  fg: {
     display: "flex",
     flexDirection: "column",
     gap: "5px",
@@ -1170,14 +967,6 @@ const s = {
     boxSizing: "border-box",
     fontFamily: "inherit",
     color: "#0f1117",
-  },
-  modalFoot: {
-    display: "flex",
-    justifyContent: "flex-end",
-    gap: "10px",
-    paddingTop: "12px",
-    borderTop: "1px solid #e5e7f0",
-    marginTop: "8px",
   },
   cancelBtn: {
     background: "#fff",
@@ -1203,5 +992,3 @@ const s = {
     boxShadow: "0 4px 12px rgba(99,102,241,0.3)",
   },
 };
-
-export default Candidates;

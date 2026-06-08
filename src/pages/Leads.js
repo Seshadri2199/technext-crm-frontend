@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { getLeads, createLead, updateLead, deleteLead } from "../services/api";
 import * as XLSX from "xlsx";
 import { saveAs } from "file-saver";
+import Pagination, { usePagination } from "../components/Pagination";
 
 const exportToExcel = (data, filename) => {
   if (!data || data.length === 0) {
@@ -30,9 +31,10 @@ function Leads() {
   const [filterStatus, setFilterStatus] = useState("All");
   const [sortField, setSortField] = useState("name");
   const [sortDir, setSortDir] = useState("asc");
-  const [page, setPage] = useState(1);
   const [showSortMenu, setShowSortMenu] = useState(false);
-  const perPage = 10;
+  const [searchVal, setSearchVal] = useState("");
+  const [loading, setLoading] = useState(true);
+
   const [form, setForm] = useState({
     name: "",
     company: "",
@@ -46,22 +48,42 @@ function Leads() {
   useEffect(() => {
     fetchLeads();
   }, []);
-  const fetchLeads = () =>
-    getLeads()
-      .then((res) => setLeads(res.data))
-      .catch(() => {});
 
-  const filtered =
-    filterStatus === "All"
-      ? leads
-      : leads.filter((l) => l.status === filterStatus);
+  const fetchLeads = () => {
+    setLoading(true);
+    getLeads()
+      .then((res) => {
+        setLeads(res.data);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  };
+
+  // Filter by status and search
+  const filtered = leads.filter((l) => {
+    const matchStatus = filterStatus === "All" || l.status === filterStatus;
+    const matchSearch =
+      !searchVal ||
+      l.name?.toLowerCase().includes(searchVal.toLowerCase()) ||
+      l.company?.toLowerCase().includes(searchVal.toLowerCase()) ||
+      l.email?.toLowerCase().includes(searchVal.toLowerCase()) ||
+      l.phone?.toLowerCase().includes(searchVal.toLowerCase()) ||
+      l.source?.toLowerCase().includes(searchVal.toLowerCase());
+    return matchStatus && matchSearch;
+  });
+
+  // Sort
   const sorted = [...filtered].sort((a, b) => {
     const av = (a[sortField] || "").toString().toLowerCase();
     const bv = (b[sortField] || "").toString().toLowerCase();
     return sortDir === "asc" ? av.localeCompare(bv) : bv.localeCompare(av);
   });
-  const totalPages = Math.ceil(sorted.length / perPage);
-  const paginated = sorted.slice((page - 1) * perPage, page * perPage);
+
+  // Pagination using hook
+  const { page, setPage, perPage, setPerPage, paginated } = usePagination(
+    sorted,
+    10,
+  );
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -112,7 +134,6 @@ function Leads() {
   };
   const handleFilter = (status) => {
     setFilterStatus(status);
-    setPage(1);
     setSelected([]);
   };
 
@@ -127,6 +148,13 @@ function Leads() {
       Notes: l.notes || "",
     }));
     exportToExcel(data, "TechNext_Leads");
+  };
+
+  const handleBulkDelete = async () => {
+    if (!window.confirm(`Delete ${selected.length} leads?`)) return;
+    for (const id of selected) await deleteLead(id);
+    setSelected([]);
+    fetchLeads();
   };
 
   const getBadge = (status) => {
@@ -158,14 +186,77 @@ function Leads() {
 
   const statuses = ["All", "Hot", "Warm", "New", "Cold"];
 
+  if (loading)
+    return (
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          height: "60vh",
+          flexDirection: "column",
+          gap: "12px",
+        }}
+      >
+        <div
+          style={{
+            width: "36px",
+            height: "36px",
+            borderRadius: "50%",
+            border: "4px solid #eef2ff",
+            borderTop: "4px solid #6366f1",
+          }}
+        />
+        <div style={{ fontSize: "13px", color: "#9ca3af" }}>
+          Loading leads...
+        </div>
+      </div>
+    );
+
   return (
     <div style={s.page}>
+      {/* Action Bar */}
       <div style={s.actionBar}>
         <div style={s.abLeft}>
           <span style={s.abTitle}>All Leads</span>
           <span style={s.abCount}>{filtered.length}</span>
+          {selected.length > 0 && (
+            <div style={s.bulkActions}>
+              <span style={s.bulkCount}>{selected.length} selected</span>
+              <button style={s.bulkDelBtn} onClick={handleBulkDelete}>
+                🗑 Delete
+              </button>
+              <button style={s.bulkClearBtn} onClick={() => setSelected([])}>
+                ✕ Clear
+              </button>
+            </div>
+          )}
         </div>
         <div style={s.abRight}>
+          {/* Search */}
+          <div style={s.searchBox}>
+            <span style={{ fontSize: "12px", color: "#9ca3af" }}>🔍</span>
+            <input
+              style={s.searchInput}
+              placeholder="Search leads..."
+              value={searchVal}
+              onChange={(e) => {
+                setSearchVal(e.target.value);
+              }}
+            />
+            {searchVal && (
+              <span
+                style={{
+                  cursor: "pointer",
+                  color: "#9ca3af",
+                  fontSize: "11px",
+                }}
+                onClick={() => setSearchVal("")}
+              >
+                ✕
+              </span>
+            )}
+          </div>
           <button
             style={{ ...s.abBtn, ...(filterOpen ? s.abBtnActive : {}) }}
             onClick={() => setFilterOpen(!filterOpen)}
@@ -242,12 +333,10 @@ function Leads() {
       </div>
 
       <div style={s.body}>
+        {/* Filter Panel */}
         {filterOpen && (
           <div style={s.filterPanel}>
             <div style={s.fpHeader}>Filter by</div>
-            <div style={s.fpSearch}>
-              <input style={s.fpSearchInput} placeholder="🔍 Search leads..." />
-            </div>
             <div style={s.fpSection}>
               <div style={s.fpSectionTitle}>STATUS</div>
               {statuses.map((st) => {
@@ -314,184 +403,241 @@ function Leads() {
                   {leads.filter((l) => l.status === "New").length}
                 </strong>
               </div>
+              <div style={s.fpStat}>
+                <span style={{ color: "#6b7280" }}>❄ Cold</span>
+                <strong>
+                  {leads.filter((l) => l.status === "Cold").length}
+                </strong>
+              </div>
+            </div>
+            <div style={s.fpDivider} />
+            <div style={s.fpSection}>
+              <div style={s.fpSectionTitle}>SOURCE</div>
+              {[
+                "LinkedIn",
+                "Referral",
+                "Website",
+                "Cold Call",
+                "Event",
+                "Other",
+              ].map((src) => {
+                const cnt = leads.filter((l) => l.source === src).length;
+                if (cnt === 0) return null;
+                return (
+                  <div key={src} style={s.fpStat}>
+                    <span>{src}</span>
+                    <strong>{cnt}</strong>
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
 
         <div style={s.mainContent}>
-          <div style={s.paginationBar}>
-            {selected.length > 0 ? (
-              <div style={s.bulkActions}>
-                <span style={s.bulkCount}>{selected.length} selected</span>
-                <button style={s.bulkBtn} onClick={() => setSelected([])}>
-                  Clear
-                </button>
-              </div>
-            ) : (
-              <span style={s.pgTotal}>
-                {(page - 1) * perPage + 1}–
-                {Math.min(page * perPage, filtered.length)} of {filtered.length}
-              </span>
-            )}
-            <div style={s.pgRight}>
-              <button
-                style={{ ...s.pgBtn, ...(page === 1 ? s.pgBtnDisabled : {}) }}
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                disabled={page === 1}
-              >
-                ◀
-              </button>
-              <span style={s.pgInfo}>
-                Page {page} of {totalPages || 1}
-              </span>
-              <button
-                style={{
-                  ...s.pgBtn,
-                  ...(page === totalPages || totalPages === 0
-                    ? s.pgBtnDisabled
-                    : {}),
-                }}
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                disabled={page === totalPages || totalPages === 0}
-              >
-                ▶
-              </button>
-            </div>
-          </div>
-
           {viewMode === "list" && (
-            <table style={s.table}>
-              <thead>
-                <tr style={s.thead}>
-                  <th style={s.thCheck}>
-                    <input
-                      type="checkbox"
-                      checked={
-                        selected.length === paginated.length &&
-                        paginated.length > 0
-                      }
-                      onChange={toggleAll}
-                      style={{ cursor: "pointer" }}
-                    />
-                  </th>
-                  <th
-                    style={{ ...s.th, cursor: "pointer" }}
-                    onClick={() => handleSort("name")}
-                  >
-                    Name <SortArrow field="name" />
-                  </th>
-                  <th
-                    style={{ ...s.th, cursor: "pointer" }}
-                    onClick={() => handleSort("company")}
-                  >
-                    Company <SortArrow field="company" />
-                  </th>
-                  <th style={s.th}>Email</th>
-                  <th style={s.th}>Phone</th>
-                  <th
-                    style={{ ...s.th, cursor: "pointer" }}
-                    onClick={() => handleSort("source")}
-                  >
-                    Source <SortArrow field="source" />
-                  </th>
-                  <th
-                    style={{ ...s.th, cursor: "pointer" }}
-                    onClick={() => handleSort("status")}
-                  >
-                    Status <SortArrow field="status" />
-                  </th>
-                  <th style={s.thIcon}>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {paginated.length === 0 ? (
-                  <tr>
-                    <td colSpan={8} style={s.emptyCell}>
-                      <div style={s.emptyWrap}>
-                        <div style={{ fontSize: "40px" }}>👤</div>
-                        <div style={s.emptyTitle}>No leads found</div>
-                        <div style={s.emptySub}>
-                          Click "Create Lead" to add your first lead
-                        </div>
-                      </div>
-                    </td>
+            <div
+              style={{
+                background: "#fff",
+                flex: 1,
+                display: "flex",
+                flexDirection: "column",
+              }}
+            >
+              <table style={s.table}>
+                <thead>
+                  <tr style={s.thead}>
+                    <th style={s.thCheck}>
+                      <input
+                        type="checkbox"
+                        checked={
+                          selected.length === paginated.length &&
+                          paginated.length > 0
+                        }
+                        onChange={toggleAll}
+                        style={{ cursor: "pointer" }}
+                      />
+                    </th>
+                    <th
+                      style={{ ...s.th, cursor: "pointer" }}
+                      onClick={() => handleSort("name")}
+                    >
+                      Name <SortArrow field="name" />
+                    </th>
+                    <th
+                      style={{ ...s.th, cursor: "pointer" }}
+                      onClick={() => handleSort("company")}
+                    >
+                      Company <SortArrow field="company" />
+                    </th>
+                    <th style={s.th}>Email</th>
+                    <th style={s.th}>Phone</th>
+                    <th
+                      style={{ ...s.th, cursor: "pointer" }}
+                      onClick={() => handleSort("source")}
+                    >
+                      Source <SortArrow field="source" />
+                    </th>
+                    <th
+                      style={{ ...s.th, cursor: "pointer" }}
+                      onClick={() => handleSort("status")}
+                    >
+                      Status <SortArrow field="status" />
+                    </th>
+                    <th style={s.thIcon}>Actions</th>
                   </tr>
-                ) : (
-                  paginated.map((lead) => {
-                    const b = getBadge(lead.status);
-                    return (
-                      <tr
-                        key={lead.id}
-                        style={{
-                          ...s.trow,
-                          ...(selected.includes(lead.id) ? s.trowSelected : {}),
-                        }}
-                      >
-                        <td style={s.tdCheck}>
-                          <input
-                            type="checkbox"
-                            checked={selected.includes(lead.id)}
-                            onChange={() => toggleSelect(lead.id)}
-                            style={{ cursor: "pointer" }}
-                          />
-                        </td>
-                        <td style={s.td}>
-                          <div style={s.nameCell}>
-                            <div style={s.nameAvatar}>
-                              {lead.name.charAt(0)}
-                            </div>
-                            <div>
+                </thead>
+                <tbody>
+                  {paginated.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} style={s.emptyCell}>
+                        <div style={s.emptyWrap}>
+                          <div
+                            style={{ fontSize: "48px", marginBottom: "12px" }}
+                          >
+                            👤
+                          </div>
+                          <div style={s.emptyTitle}>
+                            {searchVal
+                              ? "No leads match your search"
+                              : "No leads found"}
+                          </div>
+                          <div style={s.emptySub}>
+                            {searchVal
+                              ? `No results for "${searchVal}"`
+                              : 'Click "Create Lead" to add your first lead'}
+                          </div>
+                          {!searchVal && (
+                            <button
+                              style={{ ...s.createBtn, marginTop: "12px" }}
+                              onClick={() => setShowModal(true)}
+                            >
+                              + Create Lead
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ) : (
+                    paginated.map((lead) => {
+                      const b = getBadge(lead.status);
+                      return (
+                        <tr
+                          key={lead.id}
+                          style={{
+                            ...s.trow,
+                            ...(selected.includes(lead.id)
+                              ? s.trowSelected
+                              : {}),
+                          }}
+                        >
+                          <td style={s.tdCheck}>
+                            <input
+                              type="checkbox"
+                              checked={selected.includes(lead.id)}
+                              onChange={() => toggleSelect(lead.id)}
+                              style={{ cursor: "pointer" }}
+                            />
+                          </td>
+                          <td style={s.td}>
+                            <div style={s.nameCell}>
                               <div
-                                style={s.nameText}
-                                onClick={() => handleEdit(lead)}
+                                style={{
+                                  ...s.nameAvatar,
+                                  background: `hsl(${((lead.name?.charCodeAt(0) || 0) * 137) % 360}, 60%, 55%)`,
+                                }}
                               >
-                                {lead.name}
+                                {lead.name?.charAt(0)?.toUpperCase()}
+                              </div>
+                              <div>
+                                <div
+                                  style={s.nameText}
+                                  onClick={() => handleEdit(lead)}
+                                >
+                                  {lead.name}
+                                </div>
+                                {lead.notes && (
+                                  <div
+                                    style={{
+                                      fontSize: "11px",
+                                      color: "#9ca3af",
+                                      marginTop: "1px",
+                                    }}
+                                  >
+                                    {lead.notes.slice(0, 30)}
+                                    {lead.notes.length > 30 ? "..." : ""}
+                                  </div>
+                                )}
                               </div>
                             </div>
-                          </div>
-                        </td>
-                        <td style={s.td}>{lead.company || "—"}</td>
-                        <td style={s.td}>{lead.email || "—"}</td>
-                        <td style={s.td}>{lead.phone || "—"}</td>
-                        <td style={s.td}>
-                          <span style={s.sourceChip}>{lead.source || "—"}</span>
-                        </td>
-                        <td style={s.td}>
-                          <span
-                            style={{
-                              ...s.badge,
-                              background: b.bg,
-                              color: b.color,
-                            }}
-                          >
+                          </td>
+                          <td style={s.td}>{lead.company || "—"}</td>
+                          <td style={s.td}>
+                            {lead.email ? (
+                              <a
+                                href={`mailto:${lead.email}`}
+                                style={{
+                                  color: "#6366f1",
+                                  textDecoration: "none",
+                                }}
+                              >
+                                {lead.email}
+                              </a>
+                            ) : (
+                              "—"
+                            )}
+                          </td>
+                          <td style={s.td}>{lead.phone || "—"}</td>
+                          <td style={s.td}>
+                            <span style={s.sourceChip}>
+                              {lead.source || "—"}
+                            </span>
+                          </td>
+                          <td style={s.td}>
                             <span
-                              style={{ ...s.badgeDot, background: b.dot }}
-                            />
-                            {lead.status}
-                          </span>
-                        </td>
-                        <td style={s.td}>
-                          <div style={s.actions}>
-                            <button
-                              style={s.editBtn}
-                              onClick={() => handleEdit(lead)}
+                              style={{
+                                ...s.badge,
+                                background: b.bg,
+                                color: b.color,
+                              }}
                             >
-                              Edit
-                            </button>
-                            <button
-                              style={s.delBtn}
-                              onClick={() => handleDelete(lead.id)}
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
+                              <span
+                                style={{ ...s.badgeDot, background: b.dot }}
+                              />
+                              {lead.status}
+                            </span>
+                          </td>
+                          <td style={s.td}>
+                            <div style={s.actions}>
+                              <button
+                                style={s.editBtn}
+                                onClick={() => handleEdit(lead)}
+                              >
+                                ✏️ Edit
+                              </button>
+                              <button
+                                style={s.delBtn}
+                                onClick={() => handleDelete(lead.id)}
+                              >
+                                🗑
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+              {/* Pagination Component */}
+              <Pagination
+                total={sorted.length}
+                page={page}
+                perPage={perPage}
+                onPageChange={setPage}
+                onPerPageChange={setPerPage}
+              />
+            </div>
           )}
 
           {viewMode === "kanban" && (
@@ -509,31 +655,46 @@ function Leads() {
                       </span>
                       <span style={s.kCount}>{colLeads.length}</span>
                     </div>
-                    {colLeads.map((lead) => (
-                      <div
-                        key={lead.id}
-                        style={s.kCard}
-                        onClick={() => handleEdit(lead)}
-                      >
-                        <div style={s.kCardTop}>
-                          <div style={s.kAvatar}>{lead.name.charAt(0)}</div>
-                          <span
-                            style={{
-                              ...s.badge,
-                              background: b.bg,
-                              color: b.color,
-                              fontSize: "10px",
-                            }}
-                          >
-                            {lead.status}
-                          </span>
+                    <div
+                      style={{
+                        overflowY: "auto",
+                        maxHeight: "calc(100vh - 240px)",
+                        padding: "0 8px 8px",
+                      }}
+                    >
+                      {colLeads.map((lead) => (
+                        <div
+                          key={lead.id}
+                          style={s.kCard}
+                          onClick={() => handleEdit(lead)}
+                        >
+                          <div style={s.kCardTop}>
+                            <div
+                              style={{
+                                ...s.kAvatar,
+                                background: `hsl(${((lead.name?.charCodeAt(0) || 0) * 137) % 360}, 60%, 55%)`,
+                              }}
+                            >
+                              {lead.name?.charAt(0)?.toUpperCase()}
+                            </div>
+                            <span
+                              style={{
+                                ...s.badge,
+                                background: b.bg,
+                                color: b.color,
+                                fontSize: "10px",
+                              }}
+                            >
+                              {lead.status}
+                            </span>
+                          </div>
+                          <div style={s.kName}>{lead.name}</div>
+                          <div style={s.kCompany}>{lead.company || "—"}</div>
+                          <div style={s.kMeta}>{lead.email || "—"}</div>
+                          <div style={s.kSource}>{lead.source || "—"}</div>
                         </div>
-                        <div style={s.kName}>{lead.name}</div>
-                        <div style={s.kCompany}>{lead.company || "—"}</div>
-                        <div style={s.kMeta}>{lead.email || "—"}</div>
-                        <div style={s.kSource}>{lead.source || "—"}</div>
-                      </div>
-                    ))}
+                      ))}
+                    </div>
                     <div
                       style={s.kAdd}
                       onClick={() => {
@@ -560,6 +721,7 @@ function Leads() {
         </div>
       </div>
 
+      {/* Modal */}
       {showModal && (
         <div style={s.overlay}>
           <div style={s.modal}>
@@ -706,8 +868,14 @@ const s = {
     background: "#fff",
     borderBottom: "1px solid #e5e7f0",
     gap: "8px",
+    flexWrap: "wrap",
   },
-  abLeft: { display: "flex", alignItems: "center", gap: "10px" },
+  abLeft: {
+    display: "flex",
+    alignItems: "center",
+    gap: "10px",
+    flexWrap: "wrap",
+  },
   abTitle: { fontSize: "15px", fontWeight: "700", color: "#0f1117" },
   abCount: {
     background: "#eef2ff",
@@ -717,7 +885,51 @@ const s = {
     padding: "2px 9px",
     borderRadius: "20px",
   },
-  abRight: { display: "flex", alignItems: "center", gap: "6px" },
+  bulkActions: { display: "flex", alignItems: "center", gap: "8px" },
+  bulkCount: { fontSize: "13px", fontWeight: "600", color: "#6366f1" },
+  bulkDelBtn: {
+    background: "#fef2f2",
+    color: "#ef4444",
+    border: "1px solid #fecaca",
+    borderRadius: "7px",
+    padding: "4px 10px",
+    fontSize: "12px",
+    fontWeight: "600",
+    cursor: "pointer",
+    fontFamily: "inherit",
+  },
+  bulkClearBtn: {
+    background: "none",
+    border: "none",
+    fontSize: "12px",
+    color: "#6b7280",
+    cursor: "pointer",
+    fontFamily: "inherit",
+  },
+  abRight: {
+    display: "flex",
+    alignItems: "center",
+    gap: "6px",
+    flexWrap: "wrap",
+  },
+  searchBox: {
+    display: "flex",
+    alignItems: "center",
+    gap: "6px",
+    background: "#f8f9fc",
+    border: "1px solid #e5e7f0",
+    borderRadius: "8px",
+    padding: "6px 10px",
+  },
+  searchInput: {
+    background: "none",
+    border: "none",
+    outline: "none",
+    fontSize: "12.5px",
+    color: "#374151",
+    fontFamily: "inherit",
+    width: "160px",
+  },
   abBtn: {
     background: "#fff",
     border: "1px solid #e5e7f0",
@@ -727,6 +939,7 @@ const s = {
     color: "#6b7280",
     cursor: "pointer",
     fontWeight: "500",
+    fontFamily: "inherit",
   },
   abBtnActive: {
     background: "#eef2ff",
@@ -776,8 +989,8 @@ const s = {
   },
   body: { display: "flex", flex: 1, overflow: "hidden" },
   filterPanel: {
-    width: "230px",
-    minWidth: "230px",
+    width: "220px",
+    minWidth: "220px",
     background: "#fff",
     borderRight: "1px solid #e5e7f0",
     overflowY: "auto",
@@ -790,17 +1003,6 @@ const s = {
     padding: "0 16px 12px",
     textTransform: "uppercase",
     letterSpacing: "1px",
-  },
-  fpSearch: { padding: "0 12px 12px" },
-  fpSearchInput: {
-    width: "100%",
-    padding: "8px 12px",
-    borderRadius: "8px",
-    border: "1px solid #e5e7f0",
-    fontSize: "12.5px",
-    outline: "none",
-    boxSizing: "border-box",
-    background: "#f8f9fc",
   },
   fpSection: { marginBottom: "8px", padding: "0 8px" },
   fpSectionTitle: {
@@ -845,38 +1047,6 @@ const s = {
     display: "flex",
     flexDirection: "column",
   },
-  paginationBar: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    padding: "10px 20px",
-    background: "#fff",
-    borderBottom: "1px solid #f1f3f9",
-  },
-  bulkActions: { display: "flex", alignItems: "center", gap: "10px" },
-  bulkCount: { fontSize: "13px", fontWeight: "600", color: "#6366f1" },
-  bulkBtn: {
-    background: "none",
-    border: "none",
-    fontSize: "12.5px",
-    color: "#6b7280",
-    cursor: "pointer",
-    fontWeight: "500",
-    fontFamily: "inherit",
-  },
-  pgTotal: { fontSize: "12.5px", color: "#6b7280", fontWeight: "500" },
-  pgRight: { display: "flex", alignItems: "center", gap: "8px" },
-  pgBtn: {
-    background: "#fff",
-    border: "1px solid #e5e7f0",
-    borderRadius: "6px",
-    padding: "4px 10px",
-    fontSize: "11px",
-    cursor: "pointer",
-    color: "#6b7280",
-  },
-  pgBtnDisabled: { opacity: 0.4, cursor: "not-allowed" },
-  pgInfo: { fontSize: "12px", color: "#6b7280" },
   table: { width: "100%", borderCollapse: "collapse", background: "#fff" },
   thead: { background: "#f8f9fc" },
   thCheck: {
@@ -910,7 +1080,6 @@ const s = {
     width: "32px",
     height: "32px",
     borderRadius: "9px",
-    background: "linear-gradient(135deg,#6366f1,#4f46e5)",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
@@ -1025,7 +1194,6 @@ const s = {
     width: "28px",
     height: "28px",
     borderRadius: "8px",
-    background: "linear-gradient(135deg,#6366f1,#4f46e5)",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",

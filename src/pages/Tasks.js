@@ -1,76 +1,74 @@
 import React, { useState, useEffect } from "react";
-import { getTasks, createTask, updateTask, deleteTask } from "../services/api";
-import * as XLSX from "xlsx";
-import { saveAs } from "file-saver";
+import axios from "axios";
+import Pagination, { usePagination } from "../components/Pagination";
 
-const exportToExcel = (data, filename) => {
-  if (!data || data.length === 0) {
-    alert("No data to export!");
-    return;
-  }
-  const ws = XLSX.utils.json_to_sheet(data);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, filename);
-  const buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });
-  saveAs(
-    new Blob([buf], {
-      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    }),
-    `${filename}_${new Date().toISOString().split("T")[0]}.xlsx`,
-  );
-};
+const BASE_URL = "http://localhost:8080/api";
 
-function Tasks() {
+export default function Tasks() {
   const [tasks, setTasks] = useState([]);
   const [showModal, setShowModal] = useState(false);
   const [editItem, setEditItem] = useState(null);
-  const [selected, setSelected] = useState([]);
-  const [filterOpen, setFilterOpen] = useState(true);
-  const [viewMode, setViewMode] = useState("list");
   const [filterStatus, setFilterStatus] = useState("All");
   const [filterPriority, setFilterPriority] = useState("All");
-  const [sortField, setSortField] = useState("dueDate");
-  const [sortDir, setSortDir] = useState("asc");
-  const [showSortMenu, setShowSortMenu] = useState(false);
-  const [page, setPage] = useState(1);
-  const perPage = 10;
+  const [searchVal, setSearchVal] = useState("");
+  const [loading, setLoading] = useState(true);
+  const currentUser = JSON.parse(localStorage.getItem("user") || "{}");
+
   const [form, setForm] = useState({
     title: "",
-    dueDate: "",
-    priority: "Medium",
+    description: "",
+    priority: "Normal",
     status: "Pending",
+    dueDate: "",
+    assignedTo: "",
   });
 
   useEffect(() => {
-    fetchTasks();
+    fetchAll();
   }, []);
-  const fetchTasks = () =>
-    getTasks()
-      .then((res) => setTasks(res.data))
-      .catch(() => {});
+  const fetchAll = () => {
+    setLoading(true);
+    axios
+      .get(`${BASE_URL}/tasks`)
+      .then((r) => {
+        setTasks(r.data);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  };
 
   const filtered = tasks.filter((t) => {
     const matchStatus = filterStatus === "All" || t.status === filterStatus;
     const matchPriority =
       filterPriority === "All" || t.priority === filterPriority;
-    return matchStatus && matchPriority;
+    const matchSearch =
+      !searchVal ||
+      t.title?.toLowerCase().includes(searchVal.toLowerCase()) ||
+      t.assignedTo?.toLowerCase().includes(searchVal.toLowerCase());
+    return matchStatus && matchPriority && matchSearch;
   });
-  const sorted = [...filtered].sort((a, b) => {
-    const av = (a[sortField] || "").toString().toLowerCase();
-    const bv = (b[sortField] || "").toString().toLowerCase();
-    return sortDir === "asc" ? av.localeCompare(bv) : bv.localeCompare(av);
-  });
-  const totalPages = Math.ceil(sorted.length / perPage);
-  const paginated = sorted.slice((page - 1) * perPage, page * perPage);
+
+  const { page, setPage, perPage, setPerPage, paginated } = usePagination(
+    filtered,
+    10,
+  );
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (editItem) await updateTask(editItem.id, form);
-    else await createTask(form);
+    const payload = { ...form, createdBy: currentUser.name };
+    if (editItem) await axios.put(`${BASE_URL}/tasks/${editItem.id}`, payload);
+    else await axios.post(`${BASE_URL}/tasks`, payload);
     setShowModal(false);
     setEditItem(null);
-    setForm({ title: "", dueDate: "", priority: "Medium", status: "Pending" });
-    fetchTasks();
+    setForm({
+      title: "",
+      description: "",
+      priority: "Normal",
+      status: "Pending",
+      dueDate: "",
+      assignedTo: "",
+    });
+    fetchAll();
   };
 
   const handleEdit = (item) => {
@@ -79,613 +77,340 @@ function Tasks() {
     setShowModal(true);
   };
   const handleDelete = async (id) => {
-    if (window.confirm("Delete this task?")) {
-      await deleteTask(id);
-      fetchTasks();
+    if (window.confirm("Delete task?")) {
+      await axios.delete(`${BASE_URL}/tasks/${id}`);
+      fetchAll();
     }
   };
-  const handleToggle = async (task) => {
-    const updated = {
+  const handleToggleStatus = async (task) => {
+    const newStatus = task.status === "Done" ? "Pending" : "Done";
+    await axios.put(`${BASE_URL}/tasks/${task.id}`, {
       ...task,
-      status: task.status === "Pending" ? "Done" : "Pending",
-    };
-    await updateTask(task.id, updated);
-    fetchTasks();
+      status: newStatus,
+    });
+    fetchAll();
   };
-  const toggleSelect = (id) =>
-    setSelected((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+
+  const getPriorityStyle = (p) =>
+    ({
+      High: { bg: "#fef2f2", color: "#ef4444" },
+      Medium: { bg: "#fffbeb", color: "#f59e0b" },
+      Normal: { bg: "#eff6ff", color: "#3b82f6" },
+      Low: { bg: "#f0fdf4", color: "#10b981" },
+    })[p] || { bg: "#f9fafb", color: "#6b7280" };
+  const getStatusStyle = (s) =>
+    ({
+      Done: { bg: "#f0fdf4", color: "#10b981" },
+      Pending: { bg: "#fffbeb", color: "#f59e0b" },
+      InProgress: { bg: "#eff6ff", color: "#3b82f6" },
+    })[s] || { bg: "#f9fafb", color: "#6b7280" };
+
+  const isOverdue = (task) =>
+    task.dueDate &&
+    new Date(task.dueDate) < new Date() &&
+    task.status !== "Done";
+
+  if (loading)
+    return (
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          height: "60vh",
+          flexDirection: "column",
+          gap: "12px",
+        }}
+      >
+        <div
+          style={{
+            width: "36px",
+            height: "36px",
+            borderRadius: "50%",
+            border: "4px solid #eef2ff",
+            borderTop: "4px solid #6366f1",
+          }}
+        />
+        <div style={{ fontSize: "13px", color: "#9ca3af" }}>
+          Loading tasks...
+        </div>
+      </div>
     );
-  const toggleAll = () =>
-    setSelected(
-      selected.length === paginated.length && paginated.length > 0
-        ? []
-        : paginated.map((t) => t.id),
-    );
-  const handleSort = (field) => {
-    if (sortField === field) setSortDir(sortDir === "asc" ? "desc" : "asc");
-    else {
-      setSortField(field);
-      setSortDir("asc");
-    }
-    setShowSortMenu(false);
-  };
-
-  const handleExport = () => {
-    const data = filtered.map((t) => ({
-      Title: t.title || "",
-      "Due Date": t.dueDate || "",
-      Priority: t.priority || "",
-      Status: t.status || "",
-    }));
-    exportToExcel(data, "TechNext_Tasks");
-  };
-
-  const getPriorityBadge = (p) => {
-    switch (p) {
-      case "High":
-        return { bg: "#fef2f2", color: "#ef4444" };
-      case "Medium":
-        return { bg: "#fffbeb", color: "#f59e0b" };
-      default:
-        return { bg: "#eff6ff", color: "#3b82f6" };
-    }
-  };
-
-  const isOverdue = (dueDate) => dueDate && new Date(dueDate) < new Date();
-
-  const SortArrow = ({ field }) => (
-    <span
-      style={{
-        marginLeft: 3,
-        color: sortField === field ? "#6366f1" : "#d1d5db",
-        fontSize: 10,
-      }}
-    >
-      {sortField === field ? (sortDir === "asc" ? "▲" : "▼") : "⇅"}
-    </span>
-  );
-
-  const pendingCount = tasks.filter((t) => t.status === "Pending").length;
-  const doneCount = tasks.filter((t) => t.status === "Done").length;
-  const overdueCount = tasks.filter(
-    (t) => t.status === "Pending" && isOverdue(t.dueDate),
-  ).length;
 
   return (
     <div style={s.page}>
-      <div style={s.actionBar}>
-        <div style={s.abLeft}>
-          <span style={s.abTitle}>Tasks</span>
-          <span style={s.abCount}>{filtered.length}</span>
-          {overdueCount > 0 && (
-            <span style={s.overdueCount}>⚠️ {overdueCount} overdue</span>
-          )}
-        </div>
-        <div style={s.abRight}>
-          <button
-            style={{ ...s.abBtn, ...(filterOpen ? s.abBtnActive : {}) }}
-            onClick={() => setFilterOpen(!filterOpen)}
+      <div style={s.header}>
+        <div style={s.headerLeft}>
+          <span style={s.title}>Tasks</span>
+          <span style={s.count}>{filtered.length}</span>
+          <span
+            style={{
+              background: "#f0fdf4",
+              color: "#10b981",
+              fontSize: "11px",
+              fontWeight: "700",
+              padding: "2px 9px",
+              borderRadius: "20px",
+            }}
           >
-            ⧩ Filter
-          </button>
-          <div style={{ position: "relative" }}>
-            <button
-              style={s.abBtn}
-              onClick={() => setShowSortMenu(!showSortMenu)}
-            >
-              ↕ Sort
-            </button>
-            {showSortMenu && (
-              <div style={s.sortMenu}>
-                {["title", "dueDate", "priority", "status"].map((f) => (
-                  <div
-                    key={f}
-                    style={s.sortMenuItem}
-                    onClick={() => handleSort(f)}
-                  >
-                    {f === "dueDate"
-                      ? "Due Date"
-                      : f.charAt(0).toUpperCase() + f.slice(1)}
-                    {sortField === f && (
-                      <span style={{ marginLeft: 6, color: "#6366f1" }}>
-                        {sortDir === "asc" ? "▲" : "▼"}
-                      </span>
-                    )}
-                  </div>
-                ))}
-              </div>
+            {tasks.filter((t) => t.status === "Done").length} Done
+          </span>
+          <span
+            style={{
+              background: "#fef2f2",
+              color: "#ef4444",
+              fontSize: "11px",
+              fontWeight: "700",
+              padding: "2px 9px",
+              borderRadius: "20px",
+            }}
+          >
+            {tasks.filter((t) => isOverdue(t)).length} Overdue
+          </span>
+        </div>
+        <div style={s.headerRight}>
+          <div style={s.searchBox}>
+            <span>🔍</span>
+            <input
+              style={s.searchInput}
+              placeholder="Search tasks..."
+              value={searchVal}
+              onChange={(e) => setSearchVal(e.target.value)}
+            />
+            {searchVal && (
+              <span
+                style={{
+                  cursor: "pointer",
+                  color: "#9ca3af",
+                  fontSize: "11px",
+                }}
+                onClick={() => setSearchVal("")}
+              >
+                ✕
+              </span>
             )}
           </div>
-          <button
-            style={{
-              ...s.abViewBtn,
-              ...(viewMode === "list" ? s.abViewActive : {}),
-            }}
-            onClick={() => setViewMode("list")}
+          <select
+            style={s.filterSel}
+            value={filterStatus}
+            onChange={(e) => setFilterStatus(e.target.value)}
           >
-            ☰
-          </button>
-          <button
-            style={{
-              ...s.abViewBtn,
-              ...(viewMode === "board" ? s.abViewActive : {}),
-            }}
-            onClick={() => setViewMode("board")}
+            <option value="All">All Status</option>
+            <option>Pending</option>
+            <option>InProgress</option>
+            <option>Done</option>
+          </select>
+          <select
+            style={s.filterSel}
+            value={filterPriority}
+            onChange={(e) => setFilterPriority(e.target.value)}
           >
-            ⊞
-          </button>
-          <button style={s.exportBtn} onClick={handleExport}>
-            ⬇ Export
-          </button>
-          <div style={s.abDivider} />
+            <option value="All">All Priority</option>
+            <option>High</option>
+            <option>Medium</option>
+            <option>Normal</option>
+            <option>Low</option>
+          </select>
           <button
-            style={s.createBtn}
+            style={s.addBtn}
             onClick={() => {
               setEditItem(null);
               setForm({
                 title: "",
-                dueDate: "",
-                priority: "Medium",
+                description: "",
+                priority: "Normal",
                 status: "Pending",
+                dueDate: "",
+                assignedTo: "",
               });
               setShowModal(true);
             }}
           >
-            + Create Task
+            + Add Task
           </button>
         </div>
       </div>
 
-      <div style={s.body}>
-        {filterOpen && (
-          <div style={s.filterPanel}>
-            <div style={s.fpHeader}>Filter by</div>
-            <div style={s.fpSearch}>
-              <input style={s.fpSearchInput} placeholder="🔍 Search tasks..." />
-            </div>
-            <div style={s.fpSection}>
-              <div style={s.fpSectionTitle}>STATUS</div>
-              {["All", "Pending", "Done"].map((st) => (
-                <div
-                  key={st}
+      <div
+        style={{
+          background: "#fff",
+          margin: "16px",
+          borderRadius: "12px",
+          border: "1px solid #e5e7f0",
+          overflow: "hidden",
+        }}
+      >
+        <table style={s.table}>
+          <thead>
+            <tr style={s.thead}>
+              {[
+                "",
+                "Task",
+                "Priority",
+                "Assigned To",
+                "Due Date",
+                "Status",
+                "Actions",
+              ].map((h) => (
+                <th key={h} style={s.th}>
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {paginated.length === 0 ? (
+              <tr>
+                <td
+                  colSpan={7}
                   style={{
-                    ...s.fpItem,
-                    ...(filterStatus === st ? s.fpItemActive : {}),
-                  }}
-                  onClick={() => {
-                    setFilterStatus(st);
-                    setPage(1);
+                    padding: "60px",
+                    textAlign: "center",
+                    color: "#9ca3af",
                   }}
                 >
-                  <input
-                    type="checkbox"
-                    checked={filterStatus === st}
-                    onChange={() => {
-                      setFilterStatus(st);
-                      setPage(1);
-                    }}
-                    style={{ marginRight: 8, cursor: "pointer" }}
-                  />
-                  <span
-                    style={{
-                      ...s.fpLabel,
-                      ...(filterStatus === st
-                        ? { color: "#6366f1", fontWeight: 700 }
-                        : {}),
-                    }}
-                  >
-                    {st === "All" ? "All Tasks" : st}
-                  </span>
-                  <span style={s.fpCount}>
-                    {st === "All"
-                      ? tasks.length
-                      : tasks.filter((t) => t.status === st).length}
-                  </span>
-                </div>
-              ))}
-            </div>
-            <div style={s.fpDivider} />
-            <div style={s.fpSection}>
-              <div style={s.fpSectionTitle}>PRIORITY</div>
-              {["All", "High", "Medium", "Low"].map((p) => (
-                <div
-                  key={p}
-                  style={{
-                    ...s.fpItem,
-                    ...(filterPriority === p ? s.fpItemActive : {}),
-                  }}
-                  onClick={() => {
-                    setFilterPriority(p);
-                    setPage(1);
-                  }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={filterPriority === p}
-                    onChange={() => {
-                      setFilterPriority(p);
-                      setPage(1);
-                    }}
-                    style={{ marginRight: 8, cursor: "pointer" }}
-                  />
-                  <span
-                    style={{
-                      ...s.fpLabel,
-                      ...(filterPriority === p
-                        ? { color: "#6366f1", fontWeight: 700 }
-                        : {}),
-                    }}
-                  >
-                    {p === "All" ? "All Priorities" : p}
-                  </span>
-                  <span style={s.fpCount}>
-                    {p === "All"
-                      ? tasks.length
-                      : tasks.filter((t) => t.priority === p).length}
-                  </span>
-                </div>
-              ))}
-            </div>
-            <div style={s.fpDivider} />
-            <div style={s.fpSection}>
-              <div style={s.fpSectionTitle}>SUMMARY</div>
-              <div style={s.progressWrap}>
-                <div style={s.progressTop}>
-                  <span>Completion</span>
-                  <strong>
-                    {tasks.length > 0
-                      ? Math.round((doneCount / tasks.length) * 100)
-                      : 0}
-                    %
-                  </strong>
-                </div>
-                <div style={s.progressTrack}>
+                  <div style={{ fontSize: "40px", marginBottom: "12px" }}>
+                    ✅
+                  </div>
                   <div
                     style={{
-                      ...s.progressFill,
-                      width: `${tasks.length > 0 ? (doneCount / tasks.length) * 100 : 0}%`,
+                      fontWeight: "700",
+                      fontSize: "15px",
+                      marginBottom: "6px",
+                      color: "#0f1117",
                     }}
-                  />
-                </div>
-              </div>
-              <div style={s.fpStat}>
-                <span style={{ color: "#ef4444" }}>⚠️ Overdue</span>
-                <strong style={{ color: "#ef4444" }}>{overdueCount}</strong>
-              </div>
-              <div style={s.fpStat}>
-                <span style={{ color: "#10b981" }}>✅ Done</span>
-                <strong>{doneCount}</strong>
-              </div>
-            </div>
-          </div>
-        )}
-
-        <div style={s.mainContent}>
-          <div style={s.paginationBar}>
-            <span style={s.pgTotal}>
-              {filtered.length} tasks · {pendingCount} pending
-            </span>
-            <div style={s.pgRight}>
-              <button
-                style={{ ...s.pgBtn, ...(page === 1 ? s.pgBtnDisabled : {}) }}
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                disabled={page === 1}
-              >
-                ◀
-              </button>
-              <span style={s.pgInfo}>
-                {filtered.length === 0 ? 0 : (page - 1) * perPage + 1}–
-                {Math.min(page * perPage, filtered.length)}
-              </span>
-              <button
-                style={{
-                  ...s.pgBtn,
-                  ...(page === totalPages || totalPages === 0
-                    ? s.pgBtnDisabled
-                    : {}),
-                }}
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                disabled={page === totalPages || totalPages === 0}
-              >
-                ▶
-              </button>
-            </div>
-          </div>
-
-          {viewMode === "list" && (
-            <table style={s.table}>
-              <thead>
-                <tr style={s.thead}>
-                  <th style={s.thCheck}>
-                    <input
-                      type="checkbox"
-                      checked={
-                        selected.length === paginated.length &&
-                        paginated.length > 0
-                      }
-                      onChange={toggleAll}
-                      style={{ cursor: "pointer" }}
-                    />
-                  </th>
-                  <th style={s.th}>Done</th>
-                  <th
-                    style={{ ...s.th, cursor: "pointer" }}
-                    onClick={() => handleSort("title")}
                   >
-                    Subject <SortArrow field="title" />
-                  </th>
-                  <th
-                    style={{ ...s.th, cursor: "pointer" }}
-                    onClick={() => handleSort("dueDate")}
+                    No tasks found
+                  </div>
+                  <button style={s.addBtn} onClick={() => setShowModal(true)}>
+                    + Add Task
+                  </button>
+                </td>
+              </tr>
+            ) : (
+              paginated.map((task) => {
+                const ps = getPriorityStyle(task.priority);
+                const ss = getStatusStyle(task.status);
+                const overdue = isOverdue(task);
+                return (
+                  <tr
+                    key={task.id}
+                    style={{
+                      ...s.trow,
+                      ...(task.status === "Done" ? { opacity: 0.6 } : {}),
+                      ...(overdue ? { background: "#fff5f5" } : {}),
+                    }}
                   >
-                    Due Date <SortArrow field="dueDate" />
-                  </th>
-                  <th
-                    style={{ ...s.th, cursor: "pointer" }}
-                    onClick={() => handleSort("priority")}
-                  >
-                    Priority <SortArrow field="priority" />
-                  </th>
-                  <th
-                    style={{ ...s.th, cursor: "pointer" }}
-                    onClick={() => handleSort("status")}
-                  >
-                    Status <SortArrow field="status" />
-                  </th>
-                  <th style={s.thIcon}>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {paginated.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} style={s.emptyCell}>
-                      <div style={s.emptyWrap}>
-                        <div style={{ fontSize: "40px" }}>✅</div>
-                        <div style={s.emptyTitle}>No tasks found</div>
-                        <div style={s.emptySub}>Create your first task</div>
+                    <td style={{ padding: "12px 8px 12px 16px" }}>
+                      <input
+                        type="checkbox"
+                        checked={task.status === "Done"}
+                        onChange={() => handleToggleStatus(task)}
+                        style={{
+                          cursor: "pointer",
+                          width: "16px",
+                          height: "16px",
+                          accentColor: "#6366f1",
+                        }}
+                      />
+                    </td>
+                    <td style={s.td}>
+                      <div
+                        style={{
+                          fontSize: "13px",
+                          fontWeight: "600",
+                          color: task.status === "Done" ? "#9ca3af" : "#0f1117",
+                          textDecoration:
+                            task.status === "Done" ? "line-through" : "none",
+                        }}
+                      >
+                        {task.title}
+                      </div>
+                      {task.description && (
+                        <div
+                          style={{
+                            fontSize: "11px",
+                            color: "#9ca3af",
+                            marginTop: "2px",
+                          }}
+                        >
+                          {task.description.slice(0, 50)}
+                          {task.description.length > 50 ? "..." : ""}
+                        </div>
+                      )}
+                      {overdue && (
+                        <span
+                          style={{
+                            fontSize: "10px",
+                            fontWeight: "700",
+                            color: "#ef4444",
+                          }}
+                        >
+                          ⚠️ Overdue
+                        </span>
+                      )}
+                    </td>
+                    <td style={s.td}>
+                      <span
+                        style={{
+                          ...s.badge,
+                          background: ps.bg,
+                          color: ps.color,
+                        }}
+                      >
+                        {task.priority || "Normal"}
+                      </span>
+                    </td>
+                    <td style={s.td}>{task.assignedTo || "—"}</td>
+                    <td
+                      style={{
+                        ...s.td,
+                        color: overdue ? "#ef4444" : "#374151",
+                        fontWeight: overdue ? "700" : "400",
+                      }}
+                    >
+                      {task.dueDate || "—"}
+                    </td>
+                    <td style={s.td}>
+                      <span
+                        style={{
+                          ...s.badge,
+                          background: ss.bg,
+                          color: ss.color,
+                        }}
+                      >
+                        {task.status}
+                      </span>
+                    </td>
+                    <td style={s.td}>
+                      <div style={{ display: "flex", gap: "6px" }}>
+                        <button
+                          style={s.editBtn}
+                          onClick={() => handleEdit(task)}
+                        >
+                          ✏️ Edit
+                        </button>
+                        <button
+                          style={s.delBtn}
+                          onClick={() => handleDelete(task.id)}
+                        >
+                          🗑
+                        </button>
                       </div>
                     </td>
                   </tr>
-                ) : (
-                  paginated.map((task) => {
-                    const pb = getPriorityBadge(task.priority);
-                    const overdue =
-                      isOverdue(task.dueDate) && task.status === "Pending";
-                    return (
-                      <tr
-                        key={task.id}
-                        style={{
-                          ...s.trow,
-                          ...(selected.includes(task.id) ? s.trowSelected : {}),
-                          ...(task.status === "Done" ? s.trowDone : {}),
-                        }}
-                      >
-                        <td style={s.tdCheck}>
-                          <input
-                            type="checkbox"
-                            checked={selected.includes(task.id)}
-                            onChange={() => toggleSelect(task.id)}
-                            style={{ cursor: "pointer" }}
-                          />
-                        </td>
-                        <td style={s.tdCheck}>
-                          <div
-                            style={{
-                              ...s.checkbox,
-                              ...(task.status === "Done" ? s.checkboxDone : {}),
-                            }}
-                            onClick={() => handleToggle(task)}
-                          >
-                            {task.status === "Done" && (
-                              <span
-                                style={{
-                                  color: "#fff",
-                                  fontSize: "11px",
-                                  fontWeight: "700",
-                                }}
-                              >
-                                ✓
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                        <td style={s.td}>
-                          <span
-                            style={{
-                              ...s.taskTitle,
-                              ...(task.status === "Done"
-                                ? {
-                                    textDecoration: "line-through",
-                                    color: "#9ca3af",
-                                  }
-                                : {}),
-                            }}
-                            onClick={() => handleEdit(task)}
-                          >
-                            {task.title}
-                          </span>
-                        </td>
-                        <td style={s.td}>
-                          <span
-                            style={{
-                              ...s.dueDate,
-                              ...(overdue
-                                ? { color: "#ef4444", fontWeight: "600" }
-                                : {}),
-                            }}
-                          >
-                            {task.dueDate
-                              ? (overdue ? "⚠️ " : "") + task.dueDate
-                              : "—"}
-                          </span>
-                        </td>
-                        <td style={s.td}>
-                          <span
-                            style={{
-                              ...s.badge,
-                              background: pb.bg,
-                              color: pb.color,
-                            }}
-                          >
-                            {task.priority || "Normal"}
-                          </span>
-                        </td>
-                        <td style={s.td}>
-                          <span
-                            style={{
-                              ...s.badge,
-                              ...(task.status === "Done"
-                                ? { background: "#f0fdf4", color: "#10b981" }
-                                : { background: "#fef2f2", color: "#ef4444" }),
-                            }}
-                          >
-                            {task.status}
-                          </span>
-                        </td>
-                        <td style={s.td}>
-                          <div style={s.actions}>
-                            <button
-                              style={s.editBtn}
-                              onClick={() => handleEdit(task)}
-                            >
-                              Edit
-                            </button>
-                            <button
-                              style={s.delBtn}
-                              onClick={() => handleDelete(task.id)}
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          )}
-
-          {viewMode === "board" && (
-            <div style={s.board}>
-              {["Pending", "Done"].map((status) => (
-                <div key={status} style={s.boardCol}>
-                  <div
-                    style={{
-                      ...s.boardHead,
-                      borderTop: `3px solid ${status === "Done" ? "#10b981" : "#6366f1"}`,
-                    }}
-                  >
-                    <span
-                      style={{
-                        ...s.boardTitle,
-                        color: status === "Done" ? "#10b981" : "#6366f1",
-                      }}
-                    >
-                      {status}
-                    </span>
-                    <span style={s.boardCount}>
-                      {tasks.filter((t) => t.status === status).length}
-                    </span>
-                  </div>
-                  {tasks
-                    .filter((t) => t.status === status)
-                    .map((task) => {
-                      const pb = getPriorityBadge(task.priority);
-                      const overdue =
-                        isOverdue(task.dueDate) && task.status === "Pending";
-                      return (
-                        <div
-                          key={task.id}
-                          style={s.boardCard}
-                          onClick={() => handleEdit(task)}
-                        >
-                          <div style={s.boardCardTop}>
-                            <span
-                              style={{
-                                ...s.badge,
-                                background: pb.bg,
-                                color: pb.color,
-                                fontSize: "10px",
-                              }}
-                            >
-                              {task.priority}
-                            </span>
-                            <div
-                              style={{
-                                ...s.checkbox,
-                                ...(task.status === "Done"
-                                  ? s.checkboxDone
-                                  : {}),
-                                width: "18px",
-                                height: "18px",
-                              }}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleToggle(task);
-                              }}
-                            >
-                              {task.status === "Done" && (
-                                <span
-                                  style={{
-                                    color: "#fff",
-                                    fontSize: "10px",
-                                    fontWeight: "700",
-                                  }}
-                                >
-                                  ✓
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                          <div
-                            style={{
-                              ...s.boardCardTitle,
-                              ...(task.status === "Done"
-                                ? {
-                                    textDecoration: "line-through",
-                                    color: "#9ca3af",
-                                  }
-                                : {}),
-                            }}
-                          >
-                            {task.title}
-                          </div>
-                          {task.dueDate && (
-                            <div
-                              style={{
-                                ...s.boardCardDue,
-                                ...(overdue ? { color: "#ef4444" } : {}),
-                              }}
-                            >
-                              {overdue ? "⚠️ " : "📅 "}
-                              {task.dueDate}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  <div
-                    style={s.boardAdd}
-                    onClick={() => {
-                      setEditItem(null);
-                      setForm({
-                        title: "",
-                        dueDate: "",
-                        priority: "Medium",
-                        status,
-                      });
-                      setShowModal(true);
-                    }}
-                  >
-                    + Add Task
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+        <Pagination
+          total={filtered.length}
+          page={page}
+          perPage={perPage}
+          onPageChange={setPage}
+          onPerPageChange={setPerPage}
+        />
       </div>
 
       {showModal && (
@@ -694,38 +419,36 @@ function Tasks() {
             <div style={s.modalHead}>
               <div>
                 <div style={s.modalTitle}>
-                  {editItem ? "Edit Task" : "Create Task"}
+                  {editItem ? "Edit Task" : "Add Task"}
                 </div>
-                <div style={s.modalSub}>Task details</div>
               </div>
               <button style={s.closeBtn} onClick={() => setShowModal(false)}>
                 ✕
               </button>
             </div>
-            <form onSubmit={handleSubmit} style={s.modalBody}>
-              <div style={s.formGroup}>
-                <label style={s.label}>Task Subject *</label>
+            <form onSubmit={handleSubmit} style={{ padding: "24px" }}>
+              <div style={s.fg}>
+                <label style={s.label}>Task Title *</label>
                 <input
                   style={s.input}
                   value={form.title}
                   onChange={(e) => setForm({ ...form, title: e.target.value })}
                   required
-                  placeholder="e.g. Follow up with Arjun Mehta"
+                  placeholder="Task title"
+                />
+              </div>
+              <div style={s.fg}>
+                <label style={s.label}>Description</label>
+                <textarea
+                  style={{ ...s.input, minHeight: "70px" }}
+                  value={form.description}
+                  onChange={(e) =>
+                    setForm({ ...form, description: e.target.value })
+                  }
                 />
               </div>
               <div style={s.formRow}>
-                <div style={s.formGroup}>
-                  <label style={s.label}>Due Date</label>
-                  <input
-                    style={s.input}
-                    type="date"
-                    value={form.dueDate}
-                    onChange={(e) =>
-                      setForm({ ...form, dueDate: e.target.value })
-                    }
-                  />
-                </div>
-                <div style={s.formGroup}>
+                <div style={s.fg}>
                   <label style={s.label}>Priority</label>
                   <select
                     style={s.input}
@@ -736,22 +459,58 @@ function Tasks() {
                   >
                     <option>High</option>
                     <option>Medium</option>
+                    <option>Normal</option>
                     <option>Low</option>
                   </select>
                 </div>
+                <div style={s.fg}>
+                  <label style={s.label}>Status</label>
+                  <select
+                    style={s.input}
+                    value={form.status}
+                    onChange={(e) =>
+                      setForm({ ...form, status: e.target.value })
+                    }
+                  >
+                    <option>Pending</option>
+                    <option>InProgress</option>
+                    <option>Done</option>
+                  </select>
+                </div>
               </div>
-              <div style={s.formGroup}>
-                <label style={s.label}>Status</label>
-                <select
-                  style={s.input}
-                  value={form.status}
-                  onChange={(e) => setForm({ ...form, status: e.target.value })}
-                >
-                  <option>Pending</option>
-                  <option>Done</option>
-                </select>
+              <div style={s.formRow}>
+                <div style={s.fg}>
+                  <label style={s.label}>Due Date</label>
+                  <input
+                    style={s.input}
+                    type="date"
+                    value={form.dueDate}
+                    onChange={(e) =>
+                      setForm({ ...form, dueDate: e.target.value })
+                    }
+                  />
+                </div>
+                <div style={s.fg}>
+                  <label style={s.label}>Assigned To</label>
+                  <input
+                    style={s.input}
+                    value={form.assignedTo}
+                    onChange={(e) =>
+                      setForm({ ...form, assignedTo: e.target.value })
+                    }
+                    placeholder="Team member name"
+                  />
+                </div>
               </div>
-              <div style={s.modalFoot}>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "flex-end",
+                  gap: "10px",
+                  paddingTop: "12px",
+                  borderTop: "1px solid #e5e7f0",
+                }}
+              >
                 <button
                   type="button"
                   style={s.cancelBtn}
@@ -760,7 +519,7 @@ function Tasks() {
                   Cancel
                 </button>
                 <button type="submit" style={s.saveBtn}>
-                  {editItem ? "Update" : "Create Task"}
+                  {editItem ? "Update" : "Add Task"}
                 </button>
               </div>
             </form>
@@ -779,80 +538,67 @@ const s = {
     background: "#f8f9fc",
     fontFamily: "'Plus Jakarta Sans',sans-serif",
   },
-  actionBar: {
+  header: {
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
-    padding: "12px 20px",
+    padding: "14px 20px",
     background: "#fff",
     borderBottom: "1px solid #e5e7f0",
+    flexWrap: "wrap",
+    gap: "10px",
+  },
+  headerLeft: {
+    display: "flex",
+    alignItems: "center",
+    gap: "10px",
+    flexWrap: "wrap",
+  },
+  title: { fontSize: "15px", fontWeight: "700", color: "#0f1117" },
+  count: {
+    background: "#eef2ff",
+    color: "#6366f1",
+    fontSize: "12px",
+    fontWeight: "700",
+    padding: "2px 9px",
+    borderRadius: "20px",
+  },
+  headerRight: {
+    display: "flex",
+    alignItems: "center",
     gap: "8px",
+    flexWrap: "wrap",
   },
-  abLeft: { display: "flex", alignItems: "center", gap: "10px" },
-  abTitle: { fontSize: "15px", fontWeight: "700", color: "#0f1117" },
-  abCount: {
-    background: "#eef2ff",
-    color: "#6366f1",
-    fontSize: "12px",
-    fontWeight: "700",
-    padding: "2px 9px",
-    borderRadius: "20px",
-  },
-  overdueCount: {
-    background: "#fef2f2",
-    color: "#ef4444",
-    fontSize: "12px",
-    fontWeight: "700",
-    padding: "2px 9px",
-    borderRadius: "20px",
-  },
-  abRight: { display: "flex", alignItems: "center", gap: "6px" },
-  abBtn: {
-    background: "#fff",
-    border: "1px solid #e5e7f0",
-    borderRadius: "8px",
-    padding: "6px 12px",
-    fontSize: "12.5px",
-    color: "#6b7280",
-    cursor: "pointer",
-    fontWeight: "500",
-  },
-  abBtnActive: {
-    background: "#eef2ff",
-    borderColor: "#6366f1",
-    color: "#6366f1",
-  },
-  abViewBtn: {
-    background: "#fff",
+  searchBox: {
+    display: "flex",
+    alignItems: "center",
+    gap: "6px",
+    background: "#f8f9fc",
     border: "1px solid #e5e7f0",
     borderRadius: "8px",
     padding: "6px 10px",
-    fontSize: "14px",
-    color: "#6b7280",
-    cursor: "pointer",
   },
-  abViewActive: {
-    background: "#eef2ff",
-    borderColor: "#6366f1",
-    color: "#6366f1",
-  },
-  exportBtn: {
-    background: "#f0fdf4",
-    border: "1px solid #bbf7d0",
-    borderRadius: "8px",
-    padding: "6px 12px",
+  searchInput: {
+    background: "none",
+    border: "none",
+    outline: "none",
     fontSize: "12.5px",
-    color: "#10b981",
+    color: "#374151",
+    fontFamily: "inherit",
+    width: "140px",
+  },
+  filterSel: {
+    padding: "7px 10px",
+    borderRadius: "8px",
+    border: "1px solid #e5e7f0",
+    fontSize: "12.5px",
+    background: "#f8f9fc",
+    outline: "none",
+    fontFamily: "inherit",
     cursor: "pointer",
-    fontWeight: "600",
+    color: "#374151",
   },
-  abDivider: {
-    width: "1px",
-    height: "24px",
-    background: "#e5e7f0",
-    margin: "0 6px",
-  },
-  createBtn: {
+  addBtn: {
     background: "linear-gradient(135deg,#6366f1,#4f46e5)",
     color: "#fff",
     border: "none",
@@ -863,123 +609,8 @@ const s = {
     cursor: "pointer",
     boxShadow: "0 2px 8px rgba(99,102,241,0.3)",
   },
-  body: { display: "flex", flex: 1, overflow: "hidden" },
-  filterPanel: {
-    width: "230px",
-    minWidth: "230px",
-    background: "#fff",
-    borderRight: "1px solid #e5e7f0",
-    overflowY: "auto",
-    padding: "16px 0",
-  },
-  fpHeader: {
-    fontSize: "11px",
-    fontWeight: "700",
-    color: "#9ca3af",
-    padding: "0 16px 12px",
-    textTransform: "uppercase",
-    letterSpacing: "1px",
-  },
-  fpSearch: { padding: "0 12px 12px" },
-  fpSearchInput: {
-    width: "100%",
-    padding: "8px 12px",
-    borderRadius: "8px",
-    border: "1px solid #e5e7f0",
-    fontSize: "12.5px",
-    outline: "none",
-    boxSizing: "border-box",
-    background: "#f8f9fc",
-  },
-  fpSection: { marginBottom: "8px", padding: "0 8px" },
-  fpSectionTitle: {
-    fontSize: "10px",
-    fontWeight: "700",
-    color: "#9ca3af",
-    padding: "6px 8px",
-    textTransform: "uppercase",
-    letterSpacing: "1px",
-  },
-  fpItem: {
-    display: "flex",
-    alignItems: "center",
-    padding: "7px 8px",
-    cursor: "pointer",
-    borderRadius: "8px",
-    userSelect: "none",
-    gap: "6px",
-  },
-  fpItemActive: { background: "#eef2ff" },
-  fpLabel: { flex: 1, fontSize: "13px", color: "#374151", fontWeight: "500" },
-  fpCount: {
-    fontSize: "11px",
-    color: "#9ca3af",
-    background: "#f1f3f9",
-    padding: "1px 8px",
-    borderRadius: "20px",
-    fontWeight: "600",
-  },
-  fpDivider: { height: "1px", background: "#f1f3f9", margin: "12px 0" },
-  fpStat: {
-    display: "flex",
-    justifyContent: "space-between",
-    padding: "5px 8px",
-    fontSize: "12.5px",
-    color: "#6b7280",
-  },
-  progressWrap: { padding: "6px 8px 10px" },
-  progressTop: {
-    display: "flex",
-    justifyContent: "space-between",
-    fontSize: "12px",
-    color: "#6b7280",
-    marginBottom: "6px",
-  },
-  progressTrack: {
-    height: "6px",
-    background: "#f1f3f9",
-    borderRadius: "3px",
-    overflow: "hidden",
-  },
-  progressFill: {
-    height: "100%",
-    background: "linear-gradient(90deg,#6366f1,#10b981)",
-    borderRadius: "3px",
-    transition: "width 0.3s",
-  },
-  mainContent: {
-    flex: 1,
-    overflowY: "auto",
-    display: "flex",
-    flexDirection: "column",
-  },
-  paginationBar: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    padding: "10px 20px",
-    background: "#fff",
-    borderBottom: "1px solid #f1f3f9",
-  },
-  pgTotal: { fontSize: "12.5px", color: "#6b7280", fontWeight: "500" },
-  pgRight: { display: "flex", alignItems: "center", gap: "8px" },
-  pgBtn: {
-    background: "#fff",
-    border: "1px solid #e5e7f0",
-    borderRadius: "6px",
-    padding: "4px 10px",
-    fontSize: "11px",
-    cursor: "pointer",
-    color: "#6b7280",
-  },
-  pgBtnDisabled: { opacity: 0.4, cursor: "not-allowed" },
-  pgInfo: { fontSize: "12px", color: "#6b7280" },
-  table: { width: "100%", borderCollapse: "collapse", background: "#fff" },
+  table: { width: "100%", borderCollapse: "collapse" },
   thead: { background: "#f8f9fc" },
-  thCheck: {
-    padding: "12px 10px 12px 20px",
-    borderBottom: "1px solid #e5e7f0",
-  },
   th: {
     padding: "11px 14px",
     fontSize: "10.5px",
@@ -991,51 +622,21 @@ const s = {
     letterSpacing: "0.8px",
     whiteSpace: "nowrap",
   },
-  thIcon: {
-    padding: "11px 14px",
-    fontSize: "10.5px",
-    color: "#9ca3af",
-    fontWeight: "700",
-    borderBottom: "1px solid #e5e7f0",
-  },
   trow: { borderBottom: "1px solid #f1f3f9", transition: "background 0.1s" },
-  trowSelected: { background: "#fafbff" },
-  trowDone: { opacity: 0.7 },
-  tdCheck: { padding: "12px 10px 12px 20px" },
   td: { padding: "12px 14px", fontSize: "13px", color: "#374151" },
-  checkbox: {
-    width: "18px",
-    height: "18px",
-    borderRadius: "5px",
-    border: "2px solid #d1d5db",
-    cursor: "pointer",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    transition: "all 0.15s",
-  },
-  checkboxDone: { background: "#10b981", borderColor: "#10b981" },
-  taskTitle: {
-    fontSize: "13px",
-    fontWeight: "500",
-    color: "#0f1117",
-    cursor: "pointer",
-  },
-  dueDate: { fontSize: "12.5px" },
   badge: {
-    padding: "4px 10px",
-    borderRadius: "20px",
     fontSize: "11.5px",
     fontWeight: "700",
+    padding: "3px 9px",
+    borderRadius: "20px",
   },
-  actions: { display: "flex", gap: "6px" },
   editBtn: {
     background: "#eef2ff",
-    color: "#4f46e5",
+    color: "#6366f1",
     border: "none",
     borderRadius: "7px",
     padding: "5px 10px",
-    fontSize: "11.5px",
+    fontSize: "12px",
     fontWeight: "600",
     cursor: "pointer",
   },
@@ -1044,96 +645,10 @@ const s = {
     color: "#ef4444",
     border: "none",
     borderRadius: "7px",
-    padding: "5px 10px",
-    fontSize: "11.5px",
+    padding: "5px 8px",
+    fontSize: "12px",
     fontWeight: "600",
     cursor: "pointer",
-  },
-  emptyCell: { padding: "60px", textAlign: "center" },
-  emptyWrap: {
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    gap: "8px",
-  },
-  emptyTitle: { fontSize: "15px", fontWeight: "700", color: "#0f1117" },
-  emptySub: { fontSize: "13px", color: "#9ca3af" },
-  board: { display: "flex", gap: "20px", padding: "20px", overflowX: "auto" },
-  boardCol: {
-    flex: 1,
-    minWidth: "320px",
-    background: "#f8f9fc",
-    borderRadius: "12px",
-    overflow: "hidden",
-  },
-  boardHead: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    padding: "14px 14px 10px",
-    background: "#fff",
-    marginBottom: "10px",
-  },
-  boardTitle: { fontSize: "13px", fontWeight: "700" },
-  boardCount: {
-    background: "#f1f3f9",
-    borderRadius: "20px",
-    padding: "2px 9px",
-    fontSize: "11px",
-    color: "#6b7280",
-    fontWeight: "600",
-  },
-  boardCard: {
-    background: "#fff",
-    borderRadius: "10px",
-    padding: "14px",
-    marginBottom: "8px",
-    cursor: "pointer",
-    border: "1px solid #e5e7f0",
-    margin: "0 10px 8px",
-    boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
-  },
-  boardCardTop: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: "8px",
-  },
-  boardCardTitle: {
-    fontSize: "13px",
-    fontWeight: "600",
-    color: "#0f1117",
-    marginBottom: "6px",
-  },
-  boardCardDue: { fontSize: "11.5px", color: "#9ca3af" },
-  boardAdd: {
-    padding: "10px",
-    textAlign: "center",
-    fontSize: "12.5px",
-    color: "#9ca3af",
-    cursor: "pointer",
-    margin: "0 10px 10px",
-    borderRadius: "8px",
-    border: "1.5px dashed #e5e7f0",
-  },
-  sortMenu: {
-    position: "absolute",
-    top: "36px",
-    left: 0,
-    background: "#fff",
-    border: "1px solid #e5e7f0",
-    borderRadius: "10px",
-    boxShadow: "0 4px 16px rgba(0,0,0,0.1)",
-    zIndex: 100,
-    minWidth: "160px",
-  },
-  sortMenuItem: {
-    padding: "9px 14px",
-    fontSize: "12.5px",
-    color: "#374151",
-    cursor: "pointer",
-    display: "flex",
-    alignItems: "center",
   },
   overlay: {
     position: "fixed",
@@ -1148,7 +663,7 @@ const s = {
   modal: {
     background: "#fff",
     borderRadius: "16px",
-    width: "480px",
+    width: "520px",
     maxHeight: "92vh",
     overflowY: "auto",
     boxShadow: "0 32px 80px rgba(0,0,0,0.2)",
@@ -1165,7 +680,6 @@ const s = {
     zIndex: 1,
   },
   modalTitle: { fontSize: "17px", fontWeight: "800", color: "#0f1117" },
-  modalSub: { fontSize: "12.5px", color: "#9ca3af", marginTop: "3px" },
   closeBtn: {
     background: "#f1f3f9",
     border: "none",
@@ -1175,16 +689,14 @@ const s = {
     cursor: "pointer",
     fontSize: "14px",
     color: "#6b7280",
-    flexShrink: 0,
   },
-  modalBody: { padding: "24px" },
   formRow: {
     display: "grid",
     gridTemplateColumns: "1fr 1fr",
     gap: "14px",
     marginBottom: "14px",
   },
-  formGroup: {
+  fg: {
     display: "flex",
     flexDirection: "column",
     gap: "5px",
@@ -1208,14 +720,6 @@ const s = {
     boxSizing: "border-box",
     fontFamily: "inherit",
     color: "#0f1117",
-  },
-  modalFoot: {
-    display: "flex",
-    justifyContent: "flex-end",
-    gap: "10px",
-    paddingTop: "12px",
-    borderTop: "1px solid #e5e7f0",
-    marginTop: "8px",
   },
   cancelBtn: {
     background: "#fff",
@@ -1241,5 +745,3 @@ const s = {
     boxShadow: "0 4px 12px rgba(99,102,241,0.3)",
   },
 };
-
-export default Tasks;
