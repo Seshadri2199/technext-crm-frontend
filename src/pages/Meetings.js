@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import axios from "axios";
 import Pagination, { usePagination } from "../components/Pagination";
+import EmailComposer from "../components/EmailComposer";
 
 const BASE_URL = "http://localhost:8080/api";
 
@@ -11,9 +12,13 @@ export default function Meetings() {
   const [filterStatus, setFilterStatus] = useState("All");
   const [searchVal, setSearchVal] = useState("");
   const [loading, setLoading] = useState(true);
+  const [showEmailComposer, setShowEmailComposer] = useState(false);
+  const [emailPrefill, setEmailPrefill] = useState({});
+  const [emailSending, setEmailSending] = useState(null);
+  const [emailResult, setEmailResult] = useState({});
   const currentUser = JSON.parse(localStorage.getItem("user") || "{}");
 
-  const [form, setForm] = useState({
+  const emptyForm = {
     title: "",
     agenda: "",
     meetingDate: "",
@@ -22,7 +27,8 @@ export default function Meetings() {
     status: "Upcoming",
     attendees: "",
     notes: "",
-  });
+  };
+  const [form, setForm] = useState(emptyForm);
 
   useEffect(() => {
     fetchAll();
@@ -56,21 +62,14 @@ export default function Meetings() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     const payload = { ...form, createdBy: currentUser.name };
-    if (editItem)
+    if (editItem) {
       await axios.put(`${BASE_URL}/meetings/${editItem.id}`, payload);
-    else await axios.post(`${BASE_URL}/meetings`, payload);
+    } else {
+      await axios.post(`${BASE_URL}/meetings`, payload);
+    }
     setShowModal(false);
     setEditItem(null);
-    setForm({
-      title: "",
-      agenda: "",
-      meetingDate: "",
-      duration: "",
-      location: "",
-      status: "Upcoming",
-      attendees: "",
-      notes: "",
-    });
+    setForm(emptyForm);
     fetchAll();
   };
 
@@ -80,18 +79,92 @@ export default function Meetings() {
     setShowModal(true);
   };
   const handleDelete = async (id) => {
-    if (window.confirm("Delete meeting?")) {
+    if (window.confirm("Delete this meeting?")) {
       await axios.delete(`${BASE_URL}/meetings/${id}`);
       fetchAll();
     }
   };
 
-  const getStatusStyle = (s) =>
+  // ✅ Send meeting notification emails
+  const sendMeetingEmail = async (meeting, type) => {
+    if (!meeting.attendees) {
+      alert("No attendees added to this meeting!");
+      return;
+    }
+
+    const attendeeList = meeting.attendees
+      .split(",")
+      .map((a) => a.trim())
+      .filter(Boolean);
+    if (attendeeList.length === 0) {
+      alert("No attendees found!");
+      return;
+    }
+
+    setEmailSending(meeting.id + type);
+    let successCount = 0;
+    let failCount = 0;
+
+    for (const attendee of attendeeList) {
+      // Check if attendee is an email or a name
+      const isEmail = attendee.includes("@");
+      const to = isEmail ? attendee : null;
+      if (!to) {
+        failCount++;
+        continue;
+      } // skip if no email
+
+      try {
+        await axios.post(`${BASE_URL}/email/meeting`, {
+          type,
+          to,
+          name: attendee,
+          title: meeting.title,
+          date: meeting.meetingDate,
+          duration: meeting.duration || "—",
+          location: meeting.location || "TBD",
+          agenda: meeting.agenda || meeting.notes || "—",
+        });
+        successCount++;
+      } catch (e) {
+        failCount++;
+      }
+    }
+
+    setEmailSending(null);
+    setEmailResult((prev) => ({
+      ...prev,
+      [meeting.id + type]:
+        successCount > 0
+          ? `✅ Sent to ${successCount} attendee(s)`
+          : `⚠️ Failed — add email addresses in attendees field`,
+    }));
+    setTimeout(
+      () =>
+        setEmailResult((prev) => {
+          const n = { ...prev };
+          delete n[meeting.id + type];
+          return n;
+        }),
+      4000,
+    );
+  };
+
+  // ✅ Open email composer with meeting prefill
+  const openEmailComposer = (meeting) => {
+    setEmailPrefill({
+      subject: `Meeting: ${meeting.title} — ${meeting.meetingDate || ""}`,
+      message: `Dear Team,\n\nThis is regarding the meeting: ${meeting.title}\nDate: ${meeting.meetingDate || "TBD"}\nLocation: ${meeting.location || "TBD"}\nAgenda: ${meeting.agenda || "—"}\n\nPlease ensure your attendance.\n\nRegards,\n${currentUser.name}\nTechNext Staffing`,
+    });
+    setShowEmailComposer(true);
+  };
+
+  const getStatusStyle = (status) =>
     ({
       Upcoming: { bg: "#f0fdf4", color: "#10b981" },
       Completed: { bg: "#eff6ff", color: "#3b82f6" },
       Cancelled: { bg: "#fef2f2", color: "#ef4444" },
-    })[s] || { bg: "#f9fafb", color: "#6b7280" };
+    })[status] || { bg: "#f9fafb", color: "#6b7280" };
 
   if (loading)
     return (
@@ -114,16 +187,39 @@ export default function Meetings() {
             borderTop: "4px solid #6366f1",
           }}
         />
-        <div style={{ fontSize: "13px", color: "#9ca3af" }}>Loading...</div>
+        <div style={{ fontSize: "13px", color: "#9ca3af" }}>
+          Loading meetings...
+        </div>
       </div>
     );
 
   return (
     <div style={s.page}>
+      {/* Email Composer */}
+      {showEmailComposer && (
+        <EmailComposer
+          prefillSubject={emailPrefill.subject}
+          prefillMessage={emailPrefill.message}
+          onClose={() => setShowEmailComposer(false)}
+        />
+      )}
+
       <div style={s.header}>
         <div style={s.headerLeft}>
           <span style={s.title}>Meetings</span>
           <span style={s.count}>{filtered.length}</span>
+          <span
+            style={{
+              background: "#f0fdf4",
+              color: "#10b981",
+              fontSize: "11px",
+              fontWeight: "700",
+              padding: "2px 9px",
+              borderRadius: "20px",
+            }}
+          >
+            {meetings.filter((m) => m.status === "Upcoming").length} Upcoming
+          </span>
         </div>
         <div style={s.headerRight}>
           <div style={s.searchBox}>
@@ -158,19 +254,19 @@ export default function Meetings() {
             <option>Cancelled</option>
           </select>
           <button
+            style={s.emailBtn}
+            onClick={() => {
+              setEmailPrefill({});
+              setShowEmailComposer(true);
+            }}
+          >
+            📧 Compose Email
+          </button>
+          <button
             style={s.addBtn}
             onClick={() => {
               setEditItem(null);
-              setForm({
-                title: "",
-                agenda: "",
-                meetingDate: "",
-                duration: "",
-                location: "",
-                status: "Upcoming",
-                attendees: "",
-                notes: "",
-              });
+              setForm(emptyForm);
               setShowModal(true);
             }}
           >
@@ -178,6 +274,7 @@ export default function Meetings() {
           </button>
         </div>
       </div>
+
       <div
         style={{
           background: "#fff",
@@ -197,6 +294,7 @@ export default function Meetings() {
                 "Location",
                 "Attendees",
                 "Status",
+                "Email",
                 "Actions",
               ].map((h) => (
                 <th key={h} style={s.th}>
@@ -209,26 +307,30 @@ export default function Meetings() {
             {paginated.length === 0 ? (
               <tr>
                 <td
-                  colSpan={7}
-                  style={{
-                    padding: "60px",
-                    textAlign: "center",
-                    color: "#9ca3af",
-                  }}
+                  colSpan={8}
+                  style={{ padding: "60px", textAlign: "center" }}
                 >
-                  <div style={{ fontSize: "40px", marginBottom: "12px" }}>
+                  <div style={{ fontSize: "48px", marginBottom: "12px" }}>
                     📅
                   </div>
                   <div
                     style={{
                       fontWeight: "700",
+                      fontSize: "15px",
                       color: "#0f1117",
                       marginBottom: "6px",
                     }}
                   >
                     No meetings found
                   </div>
-                  <button style={s.addBtn} onClick={() => setShowModal(true)}>
+                  <button
+                    style={s.addBtn}
+                    onClick={() => {
+                      setEditItem(null);
+                      setForm(emptyForm);
+                      setShowModal(true);
+                    }}
+                  >
                     + Schedule Meeting
                   </button>
                 </td>
@@ -251,8 +353,15 @@ export default function Meetings() {
                         {m.title}
                       </div>
                       {m.agenda && (
-                        <div style={{ fontSize: "11px", color: "#9ca3af" }}>
-                          {m.agenda.slice(0, 40)}...
+                        <div
+                          style={{
+                            fontSize: "11px",
+                            color: "#9ca3af",
+                            marginTop: "2px",
+                          }}
+                        >
+                          {m.agenda?.slice(0, 40)}
+                          {m.agenda?.length > 40 ? "..." : ""}
                         </div>
                       )}
                     </td>
@@ -265,12 +374,14 @@ export default function Meetings() {
                           fontSize: "12px",
                           color: "#6b7280",
                           maxWidth: "150px",
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
                         }}
                       >
-                        {m.attendees || "—"}
+                        {m.attendees
+                          ? m.attendees.split(",").slice(0, 2).join(", ") +
+                            (m.attendees.split(",").length > 2
+                              ? ` +${m.attendees.split(",").length - 2}`
+                              : "")
+                          : "—"}
                       </div>
                     </td>
                     <td style={s.td}>
@@ -283,6 +394,81 @@ export default function Meetings() {
                       >
                         {m.status}
                       </span>
+                    </td>
+                    <td style={s.td}>
+                      <div
+                        style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: "4px",
+                        }}
+                      >
+                        <div style={{ display: "flex", gap: "4px" }}>
+                          <button
+                            style={s.emailActionBtn}
+                            title="Send meeting notification"
+                            onClick={() => sendMeetingEmail(m, "scheduled")}
+                            disabled={emailSending === m.id + "scheduled"}
+                          >
+                            {emailSending === m.id + "scheduled" ? "⏳" : "📧"}{" "}
+                            Notify
+                          </button>
+                          <button
+                            style={{
+                              ...s.emailActionBtn,
+                              background: "#fffbeb",
+                              color: "#f59e0b",
+                            }}
+                            title="Send update notification"
+                            onClick={() => sendMeetingEmail(m, "updated")}
+                            disabled={emailSending === m.id + "updated"}
+                          >
+                            {emailSending === m.id + "updated" ? "⏳" : "📝"}{" "}
+                            Update
+                          </button>
+                          <button
+                            style={{
+                              ...s.emailActionBtn,
+                              background: "#fef2f2",
+                              color: "#ef4444",
+                            }}
+                            title="Send cancellation"
+                            onClick={() => sendMeetingEmail(m, "cancelled")}
+                            disabled={emailSending === m.id + "cancelled"}
+                          >
+                            {emailSending === m.id + "cancelled" ? "⏳" : "❌"}{" "}
+                            Cancel
+                          </button>
+                        </div>
+                        <button
+                          style={{
+                            ...s.emailActionBtn,
+                            background: "#eef2ff",
+                            color: "#6366f1",
+                            width: "100%",
+                          }}
+                          onClick={() => openEmailComposer(m)}
+                        >
+                          ✏️ Custom Email
+                        </button>
+                        {Object.entries(emailResult).map(
+                          ([key, val]) =>
+                            key.startsWith(m.id.toString()) && (
+                              <div
+                                key={key}
+                                style={{
+                                  fontSize: "10px",
+                                  color: val.includes("✅")
+                                    ? "#10b981"
+                                    : "#ef4444",
+                                  fontWeight: "600",
+                                }}
+                              >
+                                {val}
+                              </div>
+                            ),
+                        )}
+                      </div>
                     </td>
                     <td style={s.td}>
                       <div style={{ display: "flex", gap: "6px" }}>
@@ -311,6 +497,7 @@ export default function Meetings() {
           onPerPageChange={setPerPage}
         />
       </div>
+
       {showModal && (
         <div style={s.overlay}>
           <div style={s.modal}>
@@ -318,6 +505,9 @@ export default function Meetings() {
               <div>
                 <div style={s.modalTitle}>
                   {editItem ? "Edit Meeting" : "Schedule Meeting"}
+                </div>
+                <div style={s.modalSub}>
+                  Add attendee emails to enable email notifications
                 </div>
               </div>
               <button style={s.closeBtn} onClick={() => setShowModal(false)}>
@@ -332,6 +522,7 @@ export default function Meetings() {
                   value={form.title}
                   onChange={(e) => setForm({ ...form, title: e.target.value })}
                   required
+                  placeholder="e.g. Project Review"
                 />
               </div>
               <div style={s.formRow}>
@@ -367,6 +558,7 @@ export default function Meetings() {
                     onChange={(e) =>
                       setForm({ ...form, location: e.target.value })
                     }
+                    placeholder="Conference Room / Zoom link"
                   />
                 </div>
                 <div style={s.fg}>
@@ -385,22 +577,35 @@ export default function Meetings() {
                 </div>
               </div>
               <div style={s.fg}>
-                <label style={s.label}>Attendees</label>
+                <label style={s.label}>
+                  Attendees — Add Email Addresses for notifications
+                </label>
                 <input
                   style={s.input}
                   value={form.attendees}
                   onChange={(e) =>
                     setForm({ ...form, attendees: e.target.value })
                   }
-                  placeholder="Names separated by commas"
+                  placeholder="ria@technnext.com, sam@technnext.com (comma separated emails)"
                 />
+                <div
+                  style={{
+                    fontSize: "11px",
+                    color: "#9ca3af",
+                    marginTop: "4px",
+                  }}
+                >
+                  💡 Add email addresses to send meeting notifications
+                  automatically
+                </div>
               </div>
               <div style={s.fg}>
                 <label style={s.label}>Agenda / Notes</label>
                 <textarea
-                  style={{ ...s.input, minHeight: "70px" }}
+                  style={{ ...s.input, minHeight: "70px", resize: "vertical" }}
                   value={form.agenda}
                   onChange={(e) => setForm({ ...form, agenda: e.target.value })}
+                  placeholder="Meeting agenda..."
                 />
               </div>
               <div
@@ -449,7 +654,12 @@ const s = {
     flexWrap: "wrap",
     gap: "10px",
   },
-  headerLeft: { display: "flex", alignItems: "center", gap: "10px" },
+  headerLeft: {
+    display: "flex",
+    alignItems: "center",
+    gap: "10px",
+    flexWrap: "wrap",
+  },
   title: { fontSize: "15px", fontWeight: "700", color: "#0f1117" },
   count: {
     background: "#eef2ff",
@@ -494,6 +704,16 @@ const s = {
     cursor: "pointer",
     color: "#374151",
   },
+  emailBtn: {
+    background: "#eef2ff",
+    border: "1px solid #c7d2fe",
+    color: "#6366f1",
+    borderRadius: "8px",
+    padding: "7px 14px",
+    fontSize: "12.5px",
+    fontWeight: "600",
+    cursor: "pointer",
+  },
   addBtn: {
     background: "linear-gradient(135deg,#6366f1,#4f46e5)",
     color: "#fff",
@@ -519,12 +739,28 @@ const s = {
     whiteSpace: "nowrap",
   },
   trow: { borderBottom: "1px solid #f1f3f9" },
-  td: { padding: "12px 14px", fontSize: "13px", color: "#374151" },
+  td: {
+    padding: "12px 14px",
+    fontSize: "13px",
+    color: "#374151",
+    verticalAlign: "top",
+  },
   badge: {
     fontSize: "11.5px",
     fontWeight: "700",
     padding: "3px 9px",
     borderRadius: "20px",
+  },
+  emailActionBtn: {
+    background: "#f0fdf4",
+    color: "#10b981",
+    border: "none",
+    borderRadius: "6px",
+    padding: "4px 8px",
+    fontSize: "11px",
+    fontWeight: "600",
+    cursor: "pointer",
+    fontFamily: "inherit",
   },
   editBtn: {
     background: "#eef2ff",
@@ -559,7 +795,7 @@ const s = {
   modal: {
     background: "#fff",
     borderRadius: "16px",
-    width: "520px",
+    width: "560px",
     maxHeight: "92vh",
     overflowY: "auto",
     boxShadow: "0 32px 80px rgba(0,0,0,0.2)",
@@ -576,6 +812,7 @@ const s = {
     zIndex: 1,
   },
   modalTitle: { fontSize: "17px", fontWeight: "800", color: "#0f1117" },
+  modalSub: { fontSize: "12.5px", color: "#9ca3af", marginTop: "3px" },
   closeBtn: {
     background: "#f1f3f9",
     border: "none",
