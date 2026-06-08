@@ -1,7 +1,10 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import axios from "axios";
+import { Client } from "@stomp/stompjs";
+import SockJS from "sockjs-client";
 
 const BASE_URL = "http://localhost:8080/api";
+const WS_URL = "http://localhost:8080/ws";
 
 const CHANNELS = [
   {
@@ -21,7 +24,20 @@ const CHANNELS = [
   { id: "operations", name: "Operations", icon: "⚙️", desc: "Ops team" },
 ];
 
-const EMOJI = ["👍", "❤️", "😊", "🎉", "🔥", "✅", "👏", "💡", "⚡", "🚀"];
+const EMOJI = [
+  "👍",
+  "❤️",
+  "😊",
+  "🎉",
+  "🔥",
+  "✅",
+  "👏",
+  "💡",
+  "⚡",
+  "🚀",
+  "😄",
+  "🙏",
+];
 
 export default function InternalChat() {
   const [activeChannel, setActiveChannel] = useState("general");
@@ -29,13 +45,17 @@ export default function InternalChat() {
   const [messages, setMessages] = useState([]);
   const [users, setUsers] = useState([]);
   const [inputMsg, setInputMsg] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [connected, setConnected] = useState(false);
   const [showEmoji, setShowEmoji] = useState(false);
-  const [unreadCounts, setUnreadCounts] = useState({});
   const [searchQuery, setSearchQuery] = useState("");
+  const [typing, setTyping] = useState("");
+  const [unreadCounts, setUnreadCounts] = useState({});
+
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
-  const pollRef = useRef(null);
+  const stompClientRef = useRef(null);
+  const subscriptionRef = useRef(null);
+  const typingTimeoutRef = useRef(null);
 
   const currentUser = JSON.parse(localStorage.getItem("user") || "{}");
 
@@ -44,21 +64,81 @@ export default function InternalChat() {
       .get(`${BASE_URL}/users`)
       .then((r) => setUsers(r.data))
       .catch(() => {});
-    fetchMessages();
-    // Poll every 3 seconds for new messages
-    pollRef.current = setInterval(fetchMessages, 3000);
-    return () => clearInterval(pollRef.current);
-  }, [activeChannel, activeDM]);
+    connectWebSocket();
+    return () => disconnectWebSocket();
+  }, []);
+
+  useEffect(() => {
+    loadMessages();
+    subscribeToChannel();
+  }, [activeChannel, activeDM, connected]);
 
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  const connectWebSocket = () => {
+    const client = new Client({
+      webSocketFactory: () => new SockJS(WS_URL),
+      reconnectDelay: 3000,
+      onConnect: () => {
+        setConnected(true);
+        console.log("WebSocket connected!");
+      },
+      onDisconnect: () => {
+        setConnected(false);
+        console.log("WebSocket disconnected");
+      },
+      onStompError: (frame) => {
+        console.error("STOMP error:", frame);
+        setConnected(false);
+      },
+    });
+    client.activate();
+    stompClientRef.current = client;
   };
 
-  const fetchMessages = async () => {
+  const disconnectWebSocket = () => {
+    if (subscriptionRef.current) subscriptionRef.current.unsubscribe();
+    if (stompClientRef.current) stompClientRef.current.deactivate();
+  };
+
+  const subscribeToChannel = () => {
+    if (!stompClientRef.current || !connected) return;
+    // Unsubscribe from previous channel
+    if (subscriptionRef.current) subscriptionRef.current.unsubscribe();
+
+    const topic = activeDM
+      ? `/user/${currentUser.id}/queue/messages`
+      : `/topic/channel.${activeChannel}`;
+
+    subscriptionRef.current = stompClientRef.current.subscribe(
+      topic,
+      (message) => {
+        const newMsg = JSON.parse(message.body);
+        setMessages((prev) => {
+          // Avoid duplicates
+          if (prev.find((m) => m.id === newMsg.id)) return prev;
+          return [...prev, newMsg];
+        });
+        scrollToBottom();
+      },
+    );
+
+    // Subscribe to typing indicator
+    if (!activeDM) {
+      stompClientRef.current.subscribe(
+        `/topic/channel.${activeChannel}.typing`,
+        (msg) => {
+          setTyping(msg.body);
+          clearTimeout(typingTimeoutRef.current);
+          typingTimeoutRef.current = setTimeout(() => setTyping(""), 2000);
+        },
+      );
+    }
+  };
+
+  const loadMessages = async () => {
     try {
       let res;
       if (activeDM) {
@@ -72,8 +152,16 @@ export default function InternalChat() {
     } catch (e) {}
   };
 
-  const sendMessage = async () => {
+  const scrollToBottom = () => {
+    setTimeout(
+      () => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }),
+      100,
+    );
+  };
+
+  const sendMessage = () => {
     if (!inputMsg.trim()) return;
+
     const payload = {
       senderId: currentUser.id,
       senderName: currentUser.name,
@@ -81,6 +169,7 @@ export default function InternalChat() {
       messageType: "text",
       isRead: false,
     };
+
     if (activeDM) {
       payload.receiverId = activeDM.id;
       payload.receiverName = activeDM.name;
@@ -88,11 +177,47 @@ export default function InternalChat() {
     } else {
       payload.channel = activeChannel;
     }
+
+    // Send via WebSocket if connected, otherwise fallback to REST
+    if (stompClientRef.current && connected) {
+      const destination = activeDM ? "/app/chat.direct" : "/app/chat.send";
+      stompClientRef.current.publish({
+        destination,
+        body: JSON.stringify(payload),
+      });
+      // Optimistically add message to UI
+      setMessages((prev) => [
+        ...prev,
+        {
+          ...payload,
+          id: Date.now(),
+          createdAt: new Date().toISOString(),
+        },
+      ]);
+    } else {
+      // Fallback to REST API
+      axios
+        .post(`${BASE_URL}/messages`, payload)
+        .then(() => loadMessages())
+        .catch(() => {});
+    }
+
     setInputMsg("");
-    try {
-      await axios.post(`${BASE_URL}/messages`, payload);
-      fetchMessages();
-    } catch (e) {}
+    inputRef.current?.focus();
+  };
+
+  const handleTyping = (e) => {
+    setInputMsg(e.target.value);
+    // Send typing indicator
+    if (stompClientRef.current && connected && !activeDM && e.target.value) {
+      stompClientRef.current.publish({
+        destination: "/app/chat.typing",
+        body: JSON.stringify({
+          senderName: currentUser.name,
+          channel: activeChannel,
+        }),
+      });
+    }
   };
 
   const handleKeyDown = (e) => {
@@ -105,7 +230,21 @@ export default function InternalChat() {
   const handleDelete = async (id, senderId) => {
     if (senderId !== currentUser.id) return;
     await axios.delete(`${BASE_URL}/messages/${id}`);
-    fetchMessages();
+    setMessages((prev) => prev.filter((m) => m.id !== id));
+  };
+
+  const switchChannel = (channelId) => {
+    setActiveChannel(channelId);
+    setActiveDM(null);
+    setMessages([]);
+    setTyping("");
+  };
+
+  const switchDM = (user) => {
+    setActiveDM(user);
+    setActiveChannel(null);
+    setMessages([]);
+    setTyping("");
   };
 
   const formatTime = (ts) => {
@@ -133,7 +272,7 @@ export default function InternalChat() {
       "#0ea5e9",
       "#ec4899",
     ];
-    return colors[name?.charCodeAt(0) % colors.length] || "#6366f1";
+    return colors[(name?.charCodeAt(0) || 0) % colors.length];
   };
 
   const getInitials = (name) =>
@@ -165,18 +304,27 @@ export default function InternalChat() {
   }, {});
 
   const otherUsers = users.filter((u) => u.id !== currentUser.id);
+  const currentChannelInfo = CHANNELS.find((c) => c.id === activeChannel);
 
   return (
     <div style={s.page}>
       {/* Sidebar */}
       <div style={s.sidebar}>
-        {/* Workspace Header */}
         <div style={s.wsHeader}>
           <div style={s.wsName}>TechNext Chat</div>
-          <div style={s.wsOnline}>🟢 {users.length} members</div>
+          <div style={s.wsStatus}>
+            <span
+              style={{
+                ...s.wsDot,
+                background: connected ? "#10b981" : "#ef4444",
+              }}
+            />
+            <span style={s.wsOnline}>
+              {connected ? `${users.length} members online` : "Reconnecting..."}
+            </span>
+          </div>
         </div>
 
-        {/* Search */}
         <div style={s.sideSearch}>
           <input
             style={s.sideSearchInput}
@@ -198,10 +346,7 @@ export default function InternalChat() {
                   ? s.sideItemActive
                   : {}),
               }}
-              onClick={() => {
-                setActiveChannel(ch.id);
-                setActiveDM(null);
-              }}
+              onClick={() => switchChannel(ch.id)}
             >
               <span style={s.sideItemIcon}>{ch.icon}</span>
               <div style={{ flex: 1 }}>
@@ -230,10 +375,7 @@ export default function InternalChat() {
                 ...s.sideItem,
                 ...(activeDM?.id === u.id ? s.sideItemActive : {}),
               }}
-              onClick={() => {
-                setActiveDM(u);
-                setActiveChannel(null);
-              }}
+              onClick={() => switchDM(u)}
             >
               <div
                 style={{ ...s.dmAvatar, background: getAvatarColor(u.name) }}
@@ -257,9 +399,9 @@ export default function InternalChat() {
         </div>
       </div>
 
-      {/* Main Chat Area */}
+      {/* Main Chat */}
       <div style={s.chatArea}>
-        {/* Chat Header */}
+        {/* Header */}
         <div style={s.chatHeader}>
           <div style={s.chatHeaderLeft}>
             {activeDM ? (
@@ -280,30 +422,32 @@ export default function InternalChat() {
             ) : (
               <>
                 <div style={s.chatHeaderIcon}>
-                  {CHANNELS.find((c) => c.id === activeChannel)?.icon || "💬"}
+                  {currentChannelInfo?.icon || "💬"}
                 </div>
                 <div>
                   <div style={s.chatHeaderName}>
-                    #{" "}
-                    {CHANNELS.find((c) => c.id === activeChannel)?.name ||
-                      activeChannel}
+                    # {currentChannelInfo?.name || activeChannel}
                   </div>
                   <div style={s.chatHeaderSub}>
-                    {CHANNELS.find((c) => c.id === activeChannel)?.desc || ""} ·{" "}
-                    {messages.length} messages
+                    {currentChannelInfo?.desc || ""} · {messages.length}{" "}
+                    messages
                   </div>
                 </div>
               </>
             )}
           </div>
           <div style={s.chatHeaderRight}>
-            <button
-              style={s.headerBtn}
-              onClick={() => setSearchQuery(searchQuery ? "" : " ")}
+            {/* Connection status */}
+            <div
+              style={{
+                ...s.connStatus,
+                background: connected ? "#f0fdf4" : "#fef2f2",
+                color: connected ? "#10b981" : "#ef4444",
+              }}
             >
-              🔍
-            </button>
-            <button style={s.headerBtn} onClick={fetchMessages}>
+              {connected ? "🟢 Live" : "🔴 Offline"}
+            </div>
+            <button style={s.headerBtn} onClick={loadMessages} title="Refresh">
               🔄
             </button>
           </div>
@@ -335,7 +479,6 @@ export default function InternalChat() {
           ) : (
             Object.entries(groupedMessages).map(([date, msgs]) => (
               <div key={date}>
-                {/* Date Divider */}
                 <div style={s.dateDivider}>
                   <div style={s.dateLine} />
                   <span style={s.dateLabel}>{date}</span>
@@ -348,7 +491,7 @@ export default function InternalChat() {
                     !prevMsg || prevMsg.senderId !== msg.senderId;
                   return (
                     <div
-                      key={msg.id}
+                      key={msg.id || idx}
                       style={{
                         ...s.msgRow,
                         ...(isOwn ? s.msgRowOwn : {}),
@@ -409,7 +552,7 @@ export default function InternalChat() {
                             style={s.deleteBtn}
                             onClick={() => handleDelete(msg.id, msg.senderId)}
                           >
-                            ✕
+                            ✕ delete
                           </button>
                         )}
                       </div>
@@ -435,10 +578,23 @@ export default function InternalChat() {
               </div>
             ))
           )}
+          {/* Typing indicator */}
+          {typing && (
+            <div style={s.typingIndicator}>
+              <div style={s.typingDots}>
+                <span />
+                <span />
+                <span />
+              </div>
+              <span style={{ fontSize: "12px", color: "#6b7280" }}>
+                {typing}
+              </span>
+            </div>
+          )}
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Input Area */}
+        {/* Input */}
         <div style={s.inputArea}>
           <div style={s.inputBox}>
             <div style={{ position: "relative" }}>
@@ -475,7 +631,7 @@ export default function InternalChat() {
                   : `Message #${activeChannel}...`
               }
               value={inputMsg}
-              onChange={(e) => setInputMsg(e.target.value)}
+              onChange={handleTyping}
               onKeyDown={handleKeyDown}
               rows={1}
             />
@@ -491,8 +647,9 @@ export default function InternalChat() {
             </button>
           </div>
           <div style={s.inputHint}>
-            Press Enter to send · Shift+Enter for new line · Auto-refreshes
-            every 3 seconds
+            {connected
+              ? "⚡ Real-time · Enter to send · Shift+Enter for new line"
+              : "⚠️ Reconnecting... messages will still be sent"}
           </div>
         </div>
       </div>
@@ -501,7 +658,7 @@ export default function InternalChat() {
       <div style={s.membersPanel}>
         <div style={s.membersPanelTitle}>Members ({users.length})</div>
         {users.map((u) => (
-          <div key={u.id} style={s.memberItem}>
+          <div key={u.id} style={s.memberItem} onClick={() => switchDM(u)}>
             <div
               style={{ ...s.memberAvatar, background: getAvatarColor(u.name) }}
             >
@@ -518,6 +675,16 @@ export default function InternalChat() {
           </div>
         ))}
       </div>
+
+      <style>{`
+        @keyframes bounce {
+          0%, 80%, 100% { transform: scale(0); }
+          40% { transform: scale(1); }
+        }
+        .typing-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #9ca3af; animation: bounce 1.4s infinite ease-in-out; }
+        .typing-dot:nth-child(1) { animation-delay: -0.32s; }
+        .typing-dot:nth-child(2) { animation-delay: -0.16s; }
+      `}</style>
     </div>
   );
 }
@@ -543,11 +710,14 @@ const s = {
     borderBottom: "1px solid rgba(255,255,255,0.06)",
   },
   wsName: { fontSize: "15px", fontWeight: "800", color: "#fff" },
-  wsOnline: {
-    fontSize: "11px",
-    color: "rgba(255,255,255,0.4)",
-    marginTop: "3px",
+  wsStatus: {
+    display: "flex",
+    alignItems: "center",
+    gap: "6px",
+    marginTop: "4px",
   },
+  wsDot: { width: "8px", height: "8px", borderRadius: "50%", flexShrink: 0 },
+  wsOnline: { fontSize: "11px", color: "rgba(255,255,255,0.4)" },
   sideSearch: { padding: "10px 12px" },
   sideSearchInput: {
     width: "100%",
@@ -640,7 +810,13 @@ const s = {
   chatHeaderIcon: { fontSize: "24px" },
   chatHeaderName: { fontSize: "15px", fontWeight: "700", color: "#0f1117" },
   chatHeaderSub: { fontSize: "12px", color: "#9ca3af", marginTop: "2px" },
-  chatHeaderRight: { display: "flex", gap: "6px" },
+  chatHeaderRight: { display: "flex", gap: "8px", alignItems: "center" },
+  connStatus: {
+    fontSize: "11px",
+    fontWeight: "700",
+    padding: "4px 10px",
+    borderRadius: "20px",
+  },
   headerBtn: {
     background: "#f8f9fc",
     border: "1px solid #e5e7f0",
@@ -730,6 +906,14 @@ const s = {
     marginTop: "2px",
     alignSelf: "flex-end",
   },
+  typingIndicator: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    padding: "8px 0",
+    marginLeft: "42px",
+  },
+  typingDots: { display: "flex", gap: "3px" },
   inputArea: {
     padding: "12px 20px 16px",
     borderTop: "1px solid #e5e7f0",
@@ -785,12 +969,6 @@ const s = {
     boxShadow: "none",
     cursor: "not-allowed",
   },
-  inputHint: {
-    fontSize: "10.5px",
-    color: "#9ca3af",
-    marginTop: "6px",
-    textAlign: "center",
-  },
   emojiPicker: {
     position: "absolute",
     bottom: "40px",
@@ -804,7 +982,7 @@ const s = {
     flexWrap: "wrap",
     gap: "6px",
     zIndex: 100,
-    width: "200px",
+    width: "220px",
   },
   emojiBtn: {
     background: "none",
@@ -813,6 +991,12 @@ const s = {
     fontSize: "20px",
     borderRadius: "6px",
     padding: "4px",
+  },
+  inputHint: {
+    fontSize: "10.5px",
+    color: "#9ca3af",
+    marginTop: "6px",
+    textAlign: "center",
   },
   membersPanel: {
     width: "220px",
@@ -836,6 +1020,7 @@ const s = {
     gap: "10px",
     padding: "8px 0",
     borderBottom: "1px solid #f8fafc",
+    cursor: "pointer",
   },
   memberAvatar: {
     width: "32px",
