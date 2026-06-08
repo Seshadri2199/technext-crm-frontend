@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import axios from "axios";
 import { Client } from "@stomp/stompjs";
-import SockJS from "sockjs-client";
+import SockJS from "sockjs-client/dist/sockjs";
 
 const BASE_URL = "http://localhost:8080/api";
 const WS_URL = "http://localhost:8080/ws";

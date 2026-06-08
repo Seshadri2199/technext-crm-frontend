@@ -141,7 +141,7 @@ export default function Attendance() {
   };
 
   const calendarDays = generateCalendar();
-  const today = new Date().toISOString().split("T")[0];
+  const today = new Date().toLocaleDateString("en-CA");
   const todayRecord = attendance.find((a) => a.date === today);
 
   return (

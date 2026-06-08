@@ -280,13 +280,12 @@ export default function Analytics() {
       name: u.name.split(" ")[0],
       fullName: u.name,
       role: u.role,
-      placements: placements.filter(
-        (p) => p.createdBy === u.name || Math.random() > 0.5,
-      ).length,
-      leads: leads.filter((l) => l.createdBy === u.name || Math.random() > 0.6)
-        .length,
+      placements: placements.filter((p) => p.createdBy === u.name).length,
+      leads: leads.filter((l) => l.createdBy === u.name).length,
       interviews: interviews.filter((i) => i.interviewer === u.name).length,
-      commission: Math.round(Math.random() * 200000 + 50000),
+      commission: placements
+        .filter((p) => p.createdBy === u.name)
+        .reduce((s, p) => s + (parseFloat(p.commission) || 0), 0),
       color: COLORS[users.indexOf(u) % COLORS.length],
     }));
 
@@ -1417,9 +1416,27 @@ export default function Analytics() {
                   </thead>
                   <tbody>
                     {[...users]
-                      .sort(() => Math.random() - 0.5)
+                      .sort(
+                        (a, b) =>
+                          placements.filter((p) => p.createdBy === b.name)
+                            .length -
+                          placements.filter((p) => p.createdBy === a.name)
+                            .length,
+                      )
                       .map((u, i) => {
-                        const score = Math.round(Math.random() * 80 + 20);
+                        const score = Math.min(
+                          100,
+                          Math.round(
+                            placements.filter((p) => p.createdBy === u.name)
+                              .length *
+                              20 +
+                              interviews.filter(
+                                (iv) => iv.interviewer === u.name,
+                              ).length *
+                                5 +
+                              20,
+                          ),
+                        );
                         return (
                           <tr
                             key={u.id}
@@ -1500,7 +1517,10 @@ export default function Analytics() {
                                 color: "#8b5cf6",
                               }}
                             >
-                              {Math.floor(Math.random() * 5 + 1)}
+                              {
+                                placements.filter((p) => p.createdBy === u.name)
+                                  .length
+                              }
                             </td>
                             <td
                               style={{
@@ -1510,7 +1530,10 @@ export default function Analytics() {
                                 color: "#6366f1",
                               }}
                             >
-                              {Math.floor(Math.random() * 15 + 3)}
+                              {
+                                leads.filter((l) => l.createdBy === u.name)
+                                  .length
+                              }
                             </td>
                             <td
                               style={{
@@ -1520,9 +1543,11 @@ export default function Analytics() {
                                 color: "#10b981",
                               }}
                             >
-                              {interviews.filter(
-                                (iv) => iv.interviewer === u.name,
-                              ).length || Math.floor(Math.random() * 8)}
+                              {
+                                interviews.filter(
+                                  (iv) => iv.interviewer === u.name,
+                                ).length
+                              }
                             </td>
                             <td style={{ padding: "12px 14px" }}>
                               <div
